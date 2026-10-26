@@ -11,7 +11,7 @@ function renderStatus(){const s=$('#status'),c=cfg();
   if(!navigator.onLine){s.className='pill off';s.textContent='● 離線';}
   else if(c.mock){s.className='pill mock';s.textContent='● 示範模式';}
   else{s.className='pill';s.textContent='● 已連線';}
-  document.querySelectorAll('#tGo,#cGo').forEach(b=>b.disabled=!navigator.onLine&&!c.mock);}
+  document.querySelectorAll('#tGo,#cGo,#chGo').forEach(b=>b.disabled=!navigator.onLine&&!c.mock);}
 addEventListener('online',()=>{renderStatus();flushQueue()});addEventListener('offline',renderStatus);
 
 // ---------- tabs ----------
@@ -32,6 +32,9 @@ async function mock(path,b,method){await new Promise(r=>setTimeout(r,250));
   if(path==='/api/correct'){let s=b.text;const fx=[[/\bI go\b/g,'I went'],[/\beat apple\b/g,'ate an apple'],[/\bhe go\b/gi,'he goes'],[/\bi\b/g,'I']];
     fx.forEach(([a,c])=>s=s.replace(a,c));return{corrected:s,isCorrect:s===b.text,explanation:s===b.text?'這句沒有問題！':'Yesterday 是過去時間，動詞要用過去式（go→went, eat→ate）；可數名詞 apple 單數前要加 an。（示範模式）'};}
   if(path==='/api/explain'){await loadDict();const d=DICT[b.word.toLowerCase()];return{word:b.word,ipa:d?.[0]||'',pos:(d?.[1]||'').split(' ')[0],definition:d?.[2]||'(mock)',zh:d?.[1]||'（示範）',example:`This is an example with "${b.word}".`,exampleZh:'這是示範例句。'};}
+  if(path==='/api/chat'){const last=[...b.messages].reverse().find(m=>m.role==='user');const Q={order:"Hi! Welcome to Sunny Cafe. What would you like to order today?",travel:"Good morning! May I see your passport, please? Where are you flying today?",interview:"Thanks for coming in. Could you tell me a little about yourself?",shopping:"Hi there! Are you looking for anything special today?",chat:"Hey! How was your day today?"};
+    if(!last)return{reply:Q[b.scenario]||`Let's practice: ${b.scenario}. How would you like to start?`,correction:null};
+    const c=await mock('/api/correct',{text:last.text});return{reply:"That sounds great! Can you tell me more about it?",correction:{corrected:c.corrected,isCorrect:c.isCorrect,note:c.isCorrect?'':c.explanation}};}
   if(path==='/api/quizcheck'){const ok=b.answer&&(b.meaning||'').split(/[,，；;\/ ]+/).some(x=>x.length>0&&(b.answer.includes(x.replace(/^[a-z]+\.\s*/,''))||x.includes(b.answer)));return{correct:!!ok,feedback:ok?'答對了！👏':`再想想～參考答案：${b.meaning}`};}
   if(path==='/api/vocab'&&method!=='POST'&&!b){const mv=JSON.parse(LS.eb_mockdb||'null')||[{word:'apple',meaning:'蘋果',example:'I eat an apple every day.'},{word:'brave',meaning:'勇敢的',example:'She is very brave.'},{word:'schedule',meaning:'行程；時間表',example:'My schedule is full today.'},{word:'improve',meaning:'改善；進步',example:'I want to improve my English.'}];return{words:mv};}
   if(path==='/api/vocab'){await loadDict();const d=DICT[b.word.toLowerCase()];const w={word:b.word,meaning:b.meaning||d?.[1]||'（待補）',example:b.example||'',added:b.added};
@@ -44,11 +47,11 @@ document.querySelectorAll('.mic').forEach(b=>{if(!SR){b.title='這個瀏覽器�
   b.onclick=()=>{const r=new SR();r.lang=b.dataset.lang;r.interimResults=true;const t=$('#'+b.dataset.target);b.classList.add('rec');
     r.onresult=e=>{t.value=[...e.results].map(x=>x[0].transcript).join('');};
     r.onerror=e=>{b.classList.remove('rec');if(e.error==='network')alert('語音辨識需要網路，請改用打字');};
-    r.onend=()=>{b.classList.remove('rec');const id=b.dataset.target;if(id==='tIn')$('#tGo').click();if(id==='cIn')$('#cGo').click();};r.start();};});
+    r.onend=()=>{b.classList.remove('rec');const id=b.dataset.target;if(id==='tIn')$('#tGo').click();if(id==='cIn')$('#cGo').click();if(id==='chIn')$('#chGo').click();};r.start();};});
 function say(text,lang='en-US'){if(!window.speechSynthesis)return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang=lang;u.rate=.95;
   const v=speechSynthesis.getVoices().find(v=>v.lang===lang);if(v)u.voice=v;speechSynthesis.speak(u);}
 const clickable=s=>esc(s).replace(/[A-Za-z][A-Za-z'-]*/g,w=>`<span class="w" data-w="${w}">${w}</span>`);
-document.addEventListener('click',e=>{const w=e.target.closest('.w');if(w){$('#dIn').value=w.dataset.w;showTab('dict');lookup();}});
+document.addEventListener('click',e=>{const w=e.target.closest('.w');if(w&&w.closest('#chLog')){chWord(w.dataset.w);return;}if(w){$('#dIn').value=w.dataset.w;showTab('dict');lookup();}});
 const busy=(el,msg='處理中…')=>{el.classList.remove('hidden');el.innerHTML=`<span class="small">${msg}</span>`};
 const fail=(el,e)=>{el.classList.remove('hidden');el.innerHTML=`<span class="err">⚠️ ${esc(e.message)}</span>`};
 
@@ -92,7 +95,7 @@ async function flushQueue(){const q=queue();if(!q.length||!navigator.onLine)retu
   for(const it of q){try{await api('/api/vocab',it,'POST')}catch{left.push(it)}}setQueue(left);}
 async function addWord(meaning){const w=$('#addIn').value.trim();if(!w)return;const it={word:w,meaning:meaning||'',added:new Date().toISOString().slice(0,10)};
   if(!navigator.onLine){setQueue([...queue(),it]);setVocab([...vocab(),{...it}]);$('#qFb').innerHTML=`<span class="good">離線中，「${esc(w)}」已排隊，連網後上傳</span>`;$('#addIn').value='';return;}
-  $('#qFb').textContent='加入中…';try{const r=await api('/api/vocab',it,'POST');setVocab([...vocab(),{word:r.word,meaning:r.meaning,example:r.example,added:it.added}]);
+  $('#qFb').textContent='加入中…';try{const r=await api('/api/vocab',it,'POST');if(r.skipped){$('#qFb').innerHTML=`<span class="good">「${esc(r.word)}」已經在 Notion 單字頁了</span>`;$('#addIn').value='';return;}setVocab([...vocab(),{word:r.word,meaning:r.meaning,example:r.example,added:it.added}]);
     $('#qFb').innerHTML=`<span class="good">✅ 已加入 Notion：${esc(r.word)}${r.meaning?' — '+esc(r.meaning):''}</span>`;$('#addIn').value='';}
   catch(e){setQueue([...queue(),it]);$('#qFb').innerHTML=`<span class="err">⚠️ ${esc(e.message)}，已先排隊稍後重試</span>`}}
 $('#qSync').onclick=sync;$('#addGo').onclick=()=>addWord();
@@ -106,6 +109,32 @@ $('#qCheck').onclick=async()=>{if(!cur)return $('#qNext').click();const a=$('#qA
   let r;if(navigator.onLine&&(cfg().url||cfg().mock)){try{r=await api('/api/quizcheck',{word:cur.word,meaning:cur.meaning,answer:a})}catch{r=local()}}else r=local();
   $('#qFb').innerHTML=`<div class="${r.correct?'good':'bad'}">${r.correct?'✅':'❌'} ${esc(r.feedback)}</div><p class="small">參考：${esc(cur.meaning)}${cur.example?'<br>💬 '+esc(cur.example):''}</p>`;};
 $('#qAns').onkeydown=e=>{if(e.key==='Enter')$('#qCheck').click()};
+
+// ---------- chat ----------
+const chHist=()=>JSON.parse(LS.eb_chat||'[]'),setHist=h=>{LS.eb_chat=JSON.stringify(h);renderChat()};
+['chScen','chLvl'].forEach(id=>{const k='eb_'+id;if(LS[k])$('#'+id).value=LS[k];$('#'+id).onchange=()=>{LS[k]=$('#'+id).value;$('#chCustom').classList.toggle('hidden',$('#chScen').value!=='custom');}});
+$('#chCustom').value=LS.eb_chCustom||'';$('#chCustom').oninput=()=>LS.eb_chCustom=$('#chCustom').value;$('#chCustom').classList.toggle('hidden',$('#chScen').value!=='custom');
+function renderChat(){const h=chHist(),L=$('#chLog');
+  L.innerHTML=h.length?h.map((m,i)=>m.role==='ai'?`<div class="msg ai">${clickable(m.text)}<button class="say" data-i="${i}">🔊</button></div>`:
+    `<div class="msg me">${esc(m.text)}</div>${m.fix&&!m.fix.isCorrect&&m.fix.corrected?`<div class="fix">✏️ ${diff(m.text,m.fix.corrected)}<br><b>${esc(m.fix.corrected)}</b>${m.fix.note?`<br>${esc(m.fix.note)}`:''}</div>`:m.fix?.isCorrect?'<div class="fix">✅ 文法正確</div>':''}`).join(''):'<p class="small">選好情境和程度，按「送出」或直接說話開始。</p>';
+  L.querySelectorAll('.say').forEach(b=>b.onclick=()=>say(h[b.dataset.i].text));L.scrollTop=L.scrollHeight;}
+async function chatSend(){const v=$('#chIn').value.trim(),h=chHist();if(!v&&h.length)return;
+  if(v)h.push({role:'user',text:v});$('#chIn').value='';setHist(h);$('#chGo').disabled=true;$('#chLog').insertAdjacentHTML('beforeend','<p class="small" id="chWait">AI 思考中…</p>');
+  const sc=$('#chScen').value;try{const r=await api('/api/chat',{messages:h.map(m=>({role:m.role,text:m.text})),scenario:sc==='custom'?($('#chCustom').value||'casual talk'):sc,level:$('#chLvl').value});
+    if(v&&r.correction)h[h.length-1].fix=r.correction;h.push({role:'ai',text:r.reply});setHist(h);say(r.reply);}
+  catch(e){$('#chWait')?.remove();$('#chLog').insertAdjacentHTML('beforeend',`<p class="err">⚠️ ${esc(e.message)}</p>`)}$('#chGo').disabled=!navigator.onLine&&!cfg().mock;}
+$('#chGo').onclick=chatSend;$('#chIn').onkeydown=e=>{if(e.key==='Enter')chatSend()};
+$('#chNew').onclick=()=>{if(!chHist().length||confirm('清除這次對話紀錄？')){setHist([]);$('#chWord').classList.add('hidden')}};
+async function chWord(w){const o=$('#chWord');busy(o,'查詢中…');await loadDict();const d=DICT[w.toLowerCase()];let r=null;
+  try{r=await api('/api/explain',{word:w})}catch{}
+  o.innerHTML=`<div class="row" style="margin:0"><b class="en">${esc(w)}</b><button id="cwSay">🔊</button><button id="cwAdd">＋加入 Notion</button><button id="cwX">✕</button></div>
+   ${r?`<div class="small">${esc(r.ipa)} ${esc(r.pos)}</div><p>${esc(r.zh)}</p><p class="small">${esc(r.definition)}<br>💬 ${esc(r.example)}</p>`:d?`<div class="small">/${esc(d[0])}/</div><p>${esc(d[1])}</p>`:'<p class="small">查不到</p>'}<div id="cwFb" class="small"></div>`;
+  $('#cwSay').onclick=()=>say(w);$('#cwX').onclick=()=>o.classList.add('hidden');
+  $('#cwAdd').onclick=async()=>{const it={word:w.toLowerCase(),meaning:r?.zh||d?.[1]||'',example:r?.example||'',added:new Date().toISOString().slice(0,10)};
+    if(!navigator.onLine){setQueue([...queue(),it]);$('#cwFb').textContent='離線中，已排隊';return;}
+    try{const x=await api('/api/vocab',it,'POST');if(!x.skipped)setVocab([...vocab(),it]);$('#cwFb').innerHTML=`<span class="good">${x.skipped?'已經在單字頁了':'✅ 已加入 Notion'}</span>`}
+    catch(e){setQueue([...queue(),it]);$('#cwFb').innerHTML=`<span class="err">⚠️ ${esc(e.message)}，已排隊</span>`}};}
+renderChat();
 
 // ---------- settings ----------
 $('#sUrl').value=LS.eb_url||'';$('#sCode').value=LS.eb_code||'';$('#sMock').checked=cfg().mock;

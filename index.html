@@ -9,11 +9,21 @@
 </head><body>
 <header><h1>英語夥伴</h1><div id="status" class="pill"></div></header>
 <nav id="tabs">
-  <button data-tab="translate" class="on">中翻英</button><button data-tab="correct">文法</button>
+  <button data-tab="chat" class="on">對話</button><button data-tab="translate">中翻英</button><button data-tab="correct">文法</button>
   <button data-tab="dict">單字</button><button data-tab="quiz">抽考</button><button data-tab="settings">設定</button>
 </nav>
 <main>
-<section id="translate" class="tab on">
+<section id="chat" class="tab on">
+  <p class="hint">和 AI 用英文聊天，每句都幫你改文法；點 AI 回覆裡的單字可查意思。<span class="net">需連網</span></p>
+  <div class="row"><select id="chScen"><option value="order">🍔 點餐</option><option value="travel">✈️ 旅遊/機場</option><option value="interview">💼 面試</option><option value="shopping">🛍️ 購物</option><option value="chat" selected>☕ 閒聊</option><option value="custom">✏️ 自訂</option></select>
+  <select id="chLvl"><option value="beginner">初級</option><option value="intermediate" selected>中級</option><option value="advanced">高級</option></select>
+  <button id="chNew">↺ 清除重來</button></div>
+  <input id="chCustom" class="hidden" placeholder="自訂情境，例如：在醫院掛號">
+  <div id="chLog"></div>
+  <div id="chWord" class="card hidden"></div>
+  <div class="row"><input id="chIn" placeholder="Type in English…" autocapitalize="sentences"><button class="mic" data-target="chIn" data-lang="en-US">🎤</button><button class="pri" id="chGo">送出</button></div>
+</section>
+<section id="translate" class="tab">
   <p class="hint">說中文或打字，翻成英文並朗讀。<span class="net">需連網</span></p>
   <textarea id="tIn" placeholder="例如：我明天想去看電影"></textarea>
   <div class="row"><button class="mic" data-target="tIn" data-lang="zh-TW">🎤 說中文</button><button class="pri" id="tGo">翻譯</button></div>
