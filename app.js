@@ -1,6 +1,7 @@
 'use strict';
 const $=s=>document.querySelector(s), LS=localStorage;
-const cfg=()=>({url:(LS.eb_url||'').replace(/\/+$/,''),code:LS.eb_code||'',mock:LS.eb_mock==='1'||!LS.eb_url});
+const DEFAULT_URL='https://english-buddy-api-0cz1.onrender.com';
+const cfg=()=>({url:(LS.eb_url||DEFAULT_URL).replace(/\/+$/,''),code:LS.eb_code||'',mock:LS.eb_mock==='1'||(LS.eb_mock!=='0'&&!LS.eb_code)});
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 let DICT=null; const loadDict=async()=>DICT||(DICT=await (await fetch('dict.json')).json());
 const vocab=()=>JSON.parse(LS.eb_vocab||'[]'), setVocab=v=>{LS.eb_vocab=JSON.stringify(v);renderCount()};
@@ -137,8 +138,8 @@ async function chWord(w){const o=$('#chWord');busy(o,'查詢中…');await loadD
 renderChat();
 
 // ---------- settings ----------
-$('#sUrl').value=LS.eb_url||'';$('#sCode').value=LS.eb_code||'';$('#sMock').checked=cfg().mock;
-$('#sSave').onclick=()=>{LS.eb_url=$('#sUrl').value.trim();LS.eb_code=$('#sCode').value.trim();LS.eb_mock=$('#sMock').checked?'1':'0';renderStatus();$('#sOut').textContent='已儲存';};
+$('#sUrl').value=LS.eb_url||DEFAULT_URL;$('#sCode').value=LS.eb_code||'';$('#sMock').checked=cfg().mock;
+$('#sSave').onclick=()=>{LS.eb_url=$('#sUrl').value.trim();LS.eb_code=$('#sCode').value.trim();const nc=$('#sCode').value.trim();if(nc&&LS.eb_url&&$('#sMock').checked&&!LS.eb_codeSaved){$('#sMock').checked=false;}LS.eb_codeSaved=nc?'1':'';LS.eb_mock=$('#sMock').checked?'1':'0';renderStatus();$('#sOut').textContent='已儲存';};
 $('#sTest').onclick=async()=>{$('#sSave').click();const c=cfg();if(c.mock)return $('#sOut').textContent='示範模式不需要連線';
   try{const h=await (await fetch(c.url+'/health')).json();await api('/api/vocab');$('#sOut').innerHTML=`<span class="good">✅ 連線成功（AI：${esc(h.ai||'未設定')}，Notion：${h.notion?'已設定':'未設定'}）</span>`}
   catch(e){$('#sOut').innerHTML=`<span class="err">⚠️ ${esc(e.message)}（免費後台閒置後第一次要等約 1 分鐘喚醒）</span>`}};
