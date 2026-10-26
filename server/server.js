@@ -76,9 +76,9 @@ app.post('/api/translate', wrap(req => askJSON(
 app.post('/api/correct', wrap(req => askJSON(
   `You are an English teacher for a Taiwanese learner. Correct the grammar of the sentence (keep meaning; if already correct, return it unchanged). Return JSON {"corrected": string, "isCorrect": boolean, "explanation": string (short Traditional Chinese explanation of each fix, 1-3 sentences)${req.body.zh ? ', "zh": string (natural Traditional Chinese (Taiwan) translation of the corrected sentence)' : ''}}.\nSentence: ${txt(req.body.text)}`)));
 app.post('/api/zh', wrap(req => askJSON(
-  `Translate this English into natural, concise Traditional Chinese (Taiwan). Return JSON {"zh": string}.\nText: ${txt(req.body.text)}`)));
+  `Translate this English sentence directly and literally into Traditional Chinese (Taiwan). Output ONLY the translation itself: no commentary, no notes, no questions, no replies, no opinions. Return JSON {"zh": string}.\nText: ${txt(req.body.text)}`)));
 app.post('/api/explain', wrap(req => askJSON(
-  `Explain the English word or phrase for a Taiwanese learner. Return JSON {"word": string, "ipa": string, "pos": string, "definition": string (simple English), "zh": string (Traditional Chinese meaning), "example": string, "exampleZh": string}.\nWord: ${txt(req.body.word).slice(0, 80)}`)));
+  `Explain the English word or phrase for a Taiwanese learner. If the input is Chinese, first pick the most common English word/phrase for it and explain that (put it in "word"). Return JSON {"word": string, "ipa": string, "pos": string, "definition": string (simple English), "zh": string (Traditional Chinese meaning), "example": string, "exampleZh": string}.\nWord: ${txt(req.body.word).slice(0, 80)}`)));
 app.post('/api/quizcheck', wrap(req => askJSON(
   `A learner was asked what the English word "${txt(req.body.word).slice(0,80)}" means (reference meaning: ${txt(req.body.meaning).slice(0,200)}). Their answer: "${txt(req.body.answer).slice(0,300)}". Answers may be in English or Chinese. Return JSON {"correct": boolean, "feedback": string (short, Traditional Chinese, encouraging)}.`)));
 

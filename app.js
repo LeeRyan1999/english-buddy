@@ -55,11 +55,11 @@ $('#sheet').onclick=e=>{if(e.target.id==='sheet')closeSheet()};
 function say(t){if(!window.speechSynthesis)return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang='en-US';u.rate=.9;speechSynthesis.speak(u)}
 async function wordSheet(w){sheet(`<b style="font-size:22px">${esc(w)}</b><p class="dim">查詢中…</p>`);let r=null,err='';
   try{r=await api('/api/explain',{word:w})}catch(e){err=e.message}
-  sheet(`<div class="row" style="align-items:center;margin:0"><b style="font-size:22px;flex:1">${esc(w)}</b><button id="wSay">🔊</button><button id="wX">✕</button></div>
+  sheet(`<div class="row" style="align-items:center;margin:0"><b style="font-size:22px;flex:1">${esc(r?.word||w)}</b><button id="wSay">🔊</button><button id="wX">✕</button></div>
    ${r?`<div class="small dim">${esc(r.ipa)} ${esc(r.pos)}</div><p style="font-size:18px">${esc(r.zh)}</p><p class="small">${esc(r.definition)}<br>💬 ${esc(r.example)}</p>`:`<p class="err small">⚠️ ${esc(err)}</p>`}
    <button class="pri" id="wAdd" style="width:100%">＋ 加入 Notion 單字頁</button><div id="wFb" class="small" style="margin-top:8px"></div>`);
-  $('#wSay').onclick=()=>say(w);$('#wX').onclick=closeSheet;
-  $('#wAdd').onclick=async()=>{const it={word:w.toLowerCase(),meaning:r?.zh||'',example:r?.example||'',added:new Date().toISOString().slice(0,10)};$('#wAdd').disabled=true;
+  $('#wSay').onclick=()=>say(r?.word||w);$('#wX').onclick=closeSheet;
+  $('#wAdd').onclick=async()=>{const ww=(r?.word&&/[A-Za-z]/.test(r.word)?r.word:w).toLowerCase();if(!/[A-Za-z]/.test(ww)){$('#wFb').textContent='請先查到英文單字';return}const it={word:ww,pron:(r?.ipa||'').replace(/^\/|\/$/g,''),meaning:r?.zh||'',example:r?.example||'',added:new Date().toISOString().slice(0,10)};$('#wAdd').disabled=true;
     if(!navigator.onLine){setQueue([...queue(),it]);$('#wFb').textContent='離線中，已排隊，連網後上傳';return;}
     try{const x=await api('/api/vocab',it,'POST');$('#wFb').innerHTML=`<span class="good">${x.skipped?'已經在單字頁了':'✅ 已加入 Notion'}</span>`}
     catch(e){setQueue([...queue(),it]);$('#wFb').innerHTML=`<span class="err">⚠️ ${esc(e.message)}，已排隊</span>`}};}
@@ -217,3 +217,10 @@ $('#vSet').onclick=()=>go('settings');$('#sBack').onclick=()=>go('voice');
 $('#sTrMe').checked=trMe();$('#sTrAI').checked=trAI();$('#sTrMe').onchange=e=>{LS.eb_trMe=e.target.checked?'1':'0';renderLog()};$('#sTrAI').onchange=e=>{LS.eb_trAI=e.target.checked?'1':'0';renderLog()};
 syncPrefs();renderCap();orbLoop();renderLog();vSet('off');renderStatus();warm();flushQueue();
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');
+
+function lookupSheet(){sheet(`<div class="row" style="align-items:center;margin:0"><b style="flex:1">查單字</b><button id="lX">✕</button></div>
+ <input id="lIn" placeholder="輸入英文或中文單字" autocomplete="off" autocapitalize="off" style="width:100%;margin:10px 0">
+ <button class="pri" id="lGo" style="width:100%">翻譯</button>`);
+ const go=()=>{const v=$('#lIn').value.trim().slice(0,80);if(v)wordSheet(v)};
+ $('#lGo').onclick=go;$('#lIn').onkeydown=e=>{if(e.key==='Enter')go()};$('#lX').onclick=closeSheet;setTimeout(()=>$('#lIn').focus(),50);}
+$('#vDict').onclick=lookupSheet;
