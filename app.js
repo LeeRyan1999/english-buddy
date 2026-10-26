@@ -155,7 +155,7 @@ async function prefetchToken(){const c=cfg();if(c.mock||V.on||!c.code||W.state!=
   try{const key=[pref('scen'),pref('lvl'),pref('voice'),pref('speed')].join('|');const t=await getToken();W.tok=t;W.tokAt=Date.now();W.tokKey=key;}catch{}}
 $('#vMain').addEventListener('pointerdown',()=>{if(V.state==='off'&&!W.tok)prefetchToken()});
 
-async function vStart(){if(V.on)return;V.on=true;V.handle=null;V.retries=0;V.greeted=false;V.gotAudio=false;V.muted=false;closeSheet();
+async function vStart(){if(V.on)return;V.on=true;V.handle=null;V.retries=0;V.greeted=false;V.gotAudio=false;V.plain=Date.now()-(+LS.eb_plain||0)<7*864e5;V.muted=false;closeSheet();
   vSet('connecting');lockWake();
   try{await ensureAudio();orbLoop();if(cfg().mock)return vMock();
     if(!navigator.onLine)throw new Error('目前離線，語音對話需要網路');
@@ -178,7 +178,7 @@ async function connect(){const gen=++V.gen;V.ready=false;let tok;
     if(sc.modelTurn?.parts)for(const p of sc.modelTurn.parts)if(p.inlineData?.data){V.gotAudio=true;V.retries=0;clearTimeout(V.thinkT);if(V.inT)commitUser();if(V.state!=='ai')vSet('ai');playPCM(p.inlineData.data);}
     if(sc.outputTranscription?.text){if(V.inT)commitUser();V.outT+=sc.outputTranscription.text;renderLog();}
     if(sc.turnComplete){commitUser();commitAI();if(!V.sources.size&&V.state!=='listen')vSet('listen');}};
-  ws.onclose=e=>{if(ws!==V.ws||!V.on)return;if(!V.plain&&!V.gotAudio&&(e.code===1007||/affective|proactiv|unknown|invalid/i.test(e.reason||''))){V.plain=true;V.handle=null;V.greeted=false;W.tok=null;}if(/not found|expired/i.test(e.reason||'')){V.handle=null;V.greeted=false;}reconnect('close '+e.code+(e.reason?' '+e.reason.slice(0,60):''));};
+  ws.onclose=e=>{if(ws!==V.ws||!V.on)return;if(!V.plain&&!V.gotAudio&&(e.code===1007||/affective|proactiv|unknown|invalid/i.test(e.reason||''))){V.plain=true;LS.eb_plain=String(Date.now());V.handle=null;V.greeted=false;W.tok=null;}if(/not found|expired/i.test(e.reason||'')){V.handle=null;V.greeted=false;}reconnect('close '+e.code+(e.reason?' '+e.reason.slice(0,60):''));};
   ws.onerror=()=>{};}
 async function reconnect(why){if(!V.on)return;const old=V.ws;V.ws=null;V.ready=false;try{old&&old.readyState<2&&old.close(1000)}catch{}
   console.log('[eb] reconnect:',why);flushPlayback();commitUser();commitAI();

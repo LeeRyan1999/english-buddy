@@ -47,7 +47,7 @@ async function askJSON(prompt) {
     for (const m of models) {
       let r; try { r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY },
-        signal: AbortSignal.timeout(15000), body: JSON.stringify({ contents: [{ parts: [{ text: m.startsWith('gemma') ? prompt + '\nReply with only the JSON object.' : prompt }] }], generationConfig: m.startsWith('gemma') ? { temperature: 0.3 } : { responseMimeType: 'application/json', temperature: 0.3 } })
+        signal: AbortSignal.timeout(m === models[0] ? 7000 : 15000), body: JSON.stringify({ contents: [{ parts: [{ text: m.startsWith('gemma') ? prompt + '\nReply with only the JSON object.' : prompt }] }], generationConfig: m.startsWith('gemma') ? { temperature: 0.3 } : { responseMimeType: 'application/json', temperature: 0.3 } })
       });
       } catch (e) { last = new Error('Gemini timeout (' + m + ')'); continue; }
       const j = await r.json().catch(() => ({}));
