@@ -32,3 +32,5 @@ label.chk{display:flex;gap:8px;align-items:center}label.chk input{width:auto;min
 .opts{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}.opts button.on{background:#e9e9e9;color:#000}
 #vLog{transition:opacity .3s}#vLog.dim2{opacity:0}
 #vLog,#vState,#controls{z-index:2}
+
+#scenBtn{max-width:70vw;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}

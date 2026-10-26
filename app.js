@@ -6,7 +6,11 @@ const cfg=()=>({url:(LS.eb_url||DEFAULT_URL).replace(/\/+$/,''),code:LS.eb_code|
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const SCEN={order:'🍔 點餐',travel:'✈️ 旅遊/機場',interview:'💼 面試',shopping:'🛍️ 購物',chat:'☕ 閒聊'},LVL={beginner:'初級',intermediate:'中級',advanced:'高級'};
 const VOICES={Puck:'Puck（活潑・男）',Charon:'Charon（沉穩・男）',Kore:'Kore（堅定・女）',Fenrir:'Fenrir（興奮・男）',Aoede:'Aoede（輕快・女）',Leda:'Leda（年輕・女）',Orus:'Orus（穩重・男）',Zephyr:'Zephyr（明亮・女）'};
-const pref=k=>LS['eb_'+k]||{scen:'chat',lvl:'intermediate',voice:'Puck',speed:'normal'}[k];
+// migrate: history used to live in eb_voice, colliding with the voice preference
+(()=>{try{const v=LS.eb_voice;if(v&&/^\s*[\[{]/.test(v)){if(!LS.eb_vhist)LS.eb_vhist=v;LS.removeItem('eb_voice');}}catch(e){}})();
+const PREF_OK={scen:Object.keys(SCEN),lvl:['beginner','intermediate','advanced'],voice:['Puck','Charon','Kore','Fenrir','Aoede','Leda','Orus','Zephyr'],speed:['normal','slow']};
+const PREF_DEF={scen:'chat',lvl:'intermediate',voice:'Puck',speed:'normal'};
+const pref=k=>{const v=LS['eb_'+k];if(!v||v.length>40||/[\[{]/.test(v)||(PREF_OK[k]&&!PREF_OK[k].includes(v)))return PREF_DEF[k];return v;};
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 
 // ---------- status / warm-up ----------
@@ -71,7 +75,7 @@ const clickable=s=>esc(s).replace(/[A-Za-z][A-Za-z'-]*/g,w=>`<span class="w" dat
 function diff(a,b){const A=a.split(/\s+/),B=b.split(/\s+/),n=A.length,m=B.length,L=[...Array(n+1)].map(()=>Array(m+1).fill(0));
   for(let i=n-1;i>=0;i--)for(let j=m-1;j>=0;j--)L[i][j]=A[i]===B[j]?L[i+1][j+1]+1:Math.max(L[i+1][j],L[i][j+1]);
   let i=0,j=0,o=[];while(i<n||j<m){if(i<n&&j<m&&A[i]===B[j]){o.push(esc(A[i]));i++;j++}else if(j<m&&(i>=n||L[i][j+1]>=L[i+1][j])){o.push(`<ins>${esc(B[j])}</ins>`);j++}else{o.push(`<del>${esc(A[i])}</del>`);i++}}return o.join(' ');}
-const vHist=()=>JSON.parse(LS.eb_voice||'[]'),setVH=h=>{LS.eb_voice=JSON.stringify(h.slice(-60));renderLog()};
+const vHist=()=>{try{const h=JSON.parse(LS.eb_vhist||'[]');return Array.isArray(h)?h.filter(m=>m&&typeof m.text==='string'):[]}catch(e){return[]}},setVH=h=>{LS.eb_vhist=JSON.stringify(h.slice(-60));renderLog()};
 function renderLog(){const L=$('#vLog'),h=vHist().slice(-4);
   L.innerHTML=h.map(m=>`<div class="msg ${m.role==='ai'?'ai':'me'}">${clickable(m.text)}</div>`).join('')
    +(V.inT?`<div class="msg me live">${esc(V.inT)}</div>`:'')+(V.outT?`<div class="msg ai live">${clickable(V.outT)}</div>`:'');}
@@ -81,7 +85,7 @@ let fixT=0;function showFix(t,r){const el=$('#fixToast');
 $('#fixToast').onclick=()=>{$('#fixToast').classList.add('hidden');$('#vLog').classList.remove('dim2')};
 $('#vLog').onclick=e=>{const w=e.target.closest('.w');if(w)wordSheet(w.dataset.w)};
 function commitUser(){const t=V.inT.trim();V.inT='';if(!t)return;const h=vHist();h.push({role:'user',text:t});setVH(h);const idx=h.length-1;
-  api('/api/correct',{text:t}).then(r=>{const h2=vHist();if(h2[idx]?.text===t){h2[idx].fix=r;LS.eb_voice=JSON.stringify(h2.slice(-60))}showFix(t,r)}).catch(e=>console.log('[eb] correct failed',e.message));}
+  api('/api/correct',{text:t}).then(r=>{const h2=vHist();if(h2[idx]?.text===t){h2[idx].fix=r;LS.eb_vhist=JSON.stringify(h2.slice(-60))}showFix(t,r)}).catch(e=>console.log('[eb] correct failed',e.message));}
 function commitAI(){const t=V.outT.trim();V.outT='';if(!t)return;const h=vHist();h.push({role:'ai',text:t});setVH(h);}
 const capOn=()=>LS.eb_cap!=='0';function renderCap(){$('#vLog').classList.toggle('hide',!capOn());$('#vCap').classList.toggle('on',capOn())}
 $('#vCap').onclick=()=>{LS.eb_cap=capOn()?'0':'1';renderCap()};
