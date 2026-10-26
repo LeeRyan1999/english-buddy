@@ -155,7 +155,7 @@ async function prefetchToken(){const c=cfg();if(c.mock||V.on||!c.code||W.state!=
   try{const key=[pref('scen'),pref('lvl'),pref('voice'),pref('speed')].join('|');const t=await getToken();W.tok=t;W.tokAt=Date.now();W.tokKey=key;}catch{}}
 $('#vMain').addEventListener('pointerdown',()=>{if(V.state==='off'&&!W.tok)prefetchToken()});
 
-async function vStart(){if(V.on)return;V.on=true;V.handle=null;V.retries=0;V.greeted=false;V.muted=false;closeSheet();
+async function vStart(){if(V.on)return;V.on=true;V.handle=null;V.retries=0;V.greeted=false;V.gotAudio=false;V.muted=false;closeSheet();
   vSet('connecting');lockWake();
   try{await ensureAudio();orbLoop();if(cfg().mock)return vMock();
     if(!navigator.onLine)throw new Error('目前離線，語音對話需要網路');
@@ -168,22 +168,23 @@ async function connect(){const gen=++V.gen;V.ready=false;let tok;
   const ws=V.ws=new WebSocket(WSS+encodeURIComponent(tok.token));
   ws.onopen=()=>ws.send(JSON.stringify({setup:{model:'models/'+tok.model}}));
   ws.onmessage=async e=>{if(ws!==V.ws)return;const m=JSON.parse(typeof e.data==='string'?e.data:await e.data.text());
-    if(m.setupComplete){V.ready=true;V.retries=0;if(V.state!=='ai')vSet('listen');
+    if(m.setupComplete){V.ready=true;if(V.state!=='ai')vSet('listen');
       if(!V.greeted){V.greeted=true;ws.send(JSON.stringify({realtimeInput:{text:'(Lee just joined the call. Greet Lee in character and ask your first question.)'}}));}}
     if(m.sessionResumptionUpdate?.resumable&&m.sessionResumptionUpdate.newHandle)V.handle=m.sessionResumptionUpdate.newHandle;
     if(m.goAway){reconnect('goAway');return}
     const sc=m.serverContent;if(!sc)return;
     if(sc.inputTranscription?.text){V.inT+=sc.inputTranscription.text;renderLog();if(V.state==='listen'){clearTimeout(V.thinkT);V.thinkT=setTimeout(()=>{if(V.state==='listen'&&V.inT)vSet('think')},900)}}
     if(sc.interrupted){flushPlayback();commitAI();vSet('listen');}
-    if(sc.modelTurn?.parts)for(const p of sc.modelTurn.parts)if(p.inlineData?.data){clearTimeout(V.thinkT);if(V.inT)commitUser();if(V.state!=='ai')vSet('ai');playPCM(p.inlineData.data);}
+    if(sc.modelTurn?.parts)for(const p of sc.modelTurn.parts)if(p.inlineData?.data){V.gotAudio=true;V.retries=0;clearTimeout(V.thinkT);if(V.inT)commitUser();if(V.state!=='ai')vSet('ai');playPCM(p.inlineData.data);}
     if(sc.outputTranscription?.text){if(V.inT)commitUser();V.outT+=sc.outputTranscription.text;renderLog();}
     if(sc.turnComplete){commitUser();commitAI();if(!V.sources.size&&V.state!=='listen')vSet('listen');}};
-  ws.onclose=e=>{if(ws!==V.ws||!V.on)return;if(!V.ready&&!V.plain&&/affective|proactiv|unknown|invalid/i.test(e.reason||'')){V.plain=true;W.tok=null;}reconnect('close '+e.code+(e.reason?' '+e.reason.slice(0,60):''));};
+  ws.onclose=e=>{if(ws!==V.ws||!V.on)return;if(!V.plain&&!V.gotAudio&&(e.code===1007||/affective|proactiv|unknown|invalid/i.test(e.reason||''))){V.plain=true;V.handle=null;V.greeted=false;W.tok=null;}if(/not found|expired/i.test(e.reason||'')){V.handle=null;V.greeted=false;}reconnect('close '+e.code+(e.reason?' '+e.reason.slice(0,60):''));};
   ws.onerror=()=>{};}
 async function reconnect(why){if(!V.on)return;const old=V.ws;V.ws=null;V.ready=false;try{old&&old.readyState<2&&old.close(1000)}catch{}
   console.log('[eb] reconnect:',why);flushPlayback();commitUser();commitAI();
   if(V.retries>=6)return fail(new Error('連線一直中斷，請檢查網路後再開始'));
-  const wait=V.handle?Math.min(8000,1500*2**V.retries):V.retries?Math.min(8000,600*2**V.retries):0; // server needs ~1s to release a resumable sessionV.retries++;vSet('reconnect');
+  const wait=V.handle?Math.min(8000,1500*2**V.retries):V.retries?Math.min(8000,600*2**V.retries):0; // server needs ~1s to release a resumable session
+  V.retries++;vSet('reconnect');
   if(!navigator.onLine){vSet('reconnect','網路斷線，恢復後會自動接續…');await new Promise(r=>addEventListener('online',r,{once:true}));if(!V.on)return;}
   await sleep(wait);if(!V.on)return;
   try{await connect()}catch(e){if(e.status===401)return fail(e);if(V.handle&&/handle|resum/i.test(e.message))V.handle=null;reconnect('token: '+e.message)}}
