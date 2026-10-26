@@ -93,6 +93,28 @@ If there is no learner message yet, start the conversation and set correction to
 Conversation so far:\n${msgs || '(none)'}`);
 }));
 
+
+// ---- Gemini Live: mint single-use ephemeral tokens locked to model + config ----
+const LIVE_MODEL = process.env.LIVE_MODEL || 'gemini-3.8-live';
+app.post('/api/live-token', wrap(async req => {
+  if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY not set');
+  const scen = SCEN[req.body.scenario] || txt(req.body.scenario).slice(0, 200) || SCEN.chat;
+  const lvl = LEVELS[req.body.level] || LEVELS.intermediate;
+  const voice = /^[A-Za-z]{2,20}$/.test(req.body.voice || '') ? req.body.voice : 'Puck';
+  const sys = `You are a warm, encouraging English conversation partner for a Taiwanese learner named Lee. Speak ONLY English. Role-play scenario: ${scen}. ${lvl} Keep every reply short: 1-3 sentences, then ALWAYS end with a question to keep the conversation going. Do not lecture about grammar (corrections are shown separately); if Lee seems stuck, gently rephrase your question more simply. Start by greeting Lee in character.`;
+  const now = Date.now();
+  const r = await fetch('https://generativelanguage.googleapis.com/v1alpha/auth_tokens', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY },
+    body: JSON.stringify({ uses: 1, expireTime: new Date(now + 30 * 60e3).toISOString(), newSessionExpireTime: new Date(now + 60e3).toISOString(),
+      bidiGenerateContentSetup: { model: 'models/' + LIVE_MODEL, generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } },
+        systemInstruction: { parts: [{ text: sys }] }, inputAudioTranscription: {}, outputAudioTranscription: {},
+        realtimeInputConfig: { automaticActivityDetection: {} } } })
+  });
+  const j = await r.json();
+  if (!r.ok) throw new Error('auth_tokens: ' + (j.error?.message || r.status));
+  return { token: j.name, model: LIVE_MODEL, expiresInSec: 1800, startWithinSec: 60 };
+}));
+
 // ---- Notion ----
 const NV = { Authorization: `Bearer ${NOTION_TOKEN}`, 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' };
 let schema = null; // {title: 'Word'}

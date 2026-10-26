@@ -20,3 +20,13 @@ select{font:inherit;color:inherit;background:#1a1d24;border:1px solid #2c313c;bo
 .msg.me{background:#2563eb;color:#fff;align-self:flex-end;border-bottom-right-radius:4px}.fix{align-self:flex-end;max-width:85%;font-size:13px;background:#1b1f17;border:1px solid #33402a;border-radius:12px;padding:6px 10px;color:#cfd8c3}
 .msg .say{background:none;border:0;min-height:auto;padding:0 0 0 6px}
 nav button{padding:8px 6px;font-size:15px;min-width:0}
+
+#orbWrap{display:flex;flex-direction:column;align-items:center;margin:34px 0 18px}
+#orb{width:190px;height:190px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 35% 30%,#93c5fd,#3b82f6 45%,#1e3a8a 80%);box-shadow:0 0 60px #3b82f655;transition:transform .08s linear,box-shadow .3s;cursor:pointer}
+#orb.idle{animation:breathe 3.5s ease-in-out infinite}#orb.ai{background:radial-gradient(circle at 35% 30%,#c4b5fd,#8b5cf6 45%,#4c1d95 80%);box-shadow:0 0 80px #8b5cf688}
+#orb.listen{box-shadow:0 0 80px #22d3ee88}#orb.connecting{animation:spin 1.2s linear infinite;opacity:.7}
+#orbCore{width:42%;height:42%;border-radius:50%;background:#ffffff22;filter:blur(6px)}
+@keyframes breathe{50%{transform:scale(1.05)}}@keyframes spin{to{transform:rotate(360deg)}}
+#vState{margin-top:12px;color:#9aa3b2;font-size:15px;min-height:22px}
+button.end{background:#b91c1c;border-color:#b91c1c;color:#fff;flex:1}
+#vLog{display:flex;flex-direction:column;gap:8px;margin:10px 0;max-height:40vh;overflow-y:auto}

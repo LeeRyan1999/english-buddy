@@ -12,7 +12,7 @@ function renderStatus(){const s=$('#status'),c=cfg();
   if(!navigator.onLine){s.className='pill off';s.textContent='● 離線';}
   else if(c.mock){s.className='pill mock';s.textContent='● 示範模式';}
   else{s.className='pill';s.textContent='● 已連線';}
-  document.querySelectorAll('#tGo,#cGo,#chGo').forEach(b=>b.disabled=!navigator.onLine&&!c.mock);}
+  document.querySelectorAll('#tGo,#cGo,#chGo,#vStart').forEach(b=>b.disabled=!navigator.onLine&&!c.mock);}
 addEventListener('online',()=>{renderStatus();flushQueue()});addEventListener('offline',renderStatus);
 
 // ---------- tabs ----------
@@ -30,8 +30,8 @@ async function api(path,body,method){const c=cfg();
 async function mock(path,b,method){await new Promise(r=>setTimeout(r,250));
   if(path==='/api/translate'){const m={'我明天想去看電影':'I want to go to the movies tomorrow.','你好':'Hello.','謝謝':'Thank you.'};
     return{english:m[b.text.trim()]||`[示範] English for: ${b.text}`,alt:'(casual) I wanna catch a movie tomorrow.',note:'示範模式回應，接上後台後會用 AI 翻譯。'};}
-  if(path==='/api/correct'){let s=b.text;const fx=[[/\bI go\b/g,'I went'],[/\beat apple\b/g,'ate an apple'],[/\bhe go\b/gi,'he goes'],[/\bi\b/g,'I']];
-    fx.forEach(([a,c])=>s=s.replace(a,c));return{corrected:s,isCorrect:s===b.text,explanation:s===b.text?'這句沒有問題！':'Yesterday 是過去時間，動詞要用過去式（go→went, eat→ate）；可數名詞 apple 單數前要加 an。（示範模式）'};}
+  if(path==='/api/correct'){let s=b.text;const fx=[[/\bI go\b/g,'I went'],[/\beat apple\b/g,'ate an apple'],[/\bhe go\b/gi,'he goes'],[/\bi\b/g,'I'],[/\bI wants\b/g,'I want'],[/\btwo coffee\b/g,'two coffees']];
+    fx.forEach(([a,c])=>s=s.replace(a,c));return{corrected:s,isCorrect:s===b.text,explanation:s===b.text?'這句沒有問題！':(/Yesterday/.test(b.text)?'Yesterday 是過去時間，動詞要用過去式（go→went, eat→ate）；可數名詞 apple 單數前要加 an。':'主詞 I 的動詞不加 s（wants→want）；可數名詞複數要加 s（coffee→coffees）。')+'（示範模式）'};}
   if(path==='/api/explain'){await loadDict();const d=DICT[b.word.toLowerCase()];return{word:b.word,ipa:d?.[0]||'',pos:(d?.[1]||'').split(' ')[0],definition:d?.[2]||'(mock)',zh:d?.[1]||'（示範）',example:`This is an example with "${b.word}".`,exampleZh:'這是示範例句。'};}
   if(path==='/api/chat'){const last=[...b.messages].reverse().find(m=>m.role==='user');const Q={order:"Hi! Welcome to Sunny Cafe. What would you like to order today?",travel:"Good morning! May I see your passport, please? Where are you flying today?",interview:"Thanks for coming in. Could you tell me a little about yourself?",shopping:"Hi there! Are you looking for anything special today?",chat:"Hey! How was your day today?"};
     if(!last)return{reply:Q[b.scenario]||`Let's practice: ${b.scenario}. How would you like to start?`,correction:null};
@@ -52,7 +52,7 @@ document.querySelectorAll('.mic').forEach(b=>{if(!SR){b.title='這個瀏覽器�
 function say(text,lang='en-US'){if(!window.speechSynthesis)return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang=lang;u.rate=.95;
   const v=speechSynthesis.getVoices().find(v=>v.lang===lang);if(v)u.voice=v;speechSynthesis.speak(u);}
 const clickable=s=>esc(s).replace(/[A-Za-z][A-Za-z'-]*/g,w=>`<span class="w" data-w="${w}">${w}</span>`);
-document.addEventListener('click',e=>{const w=e.target.closest('.w');if(w&&w.closest('#chLog')){chWord(w.dataset.w);return;}if(w){$('#dIn').value=w.dataset.w;showTab('dict');lookup();}});
+document.addEventListener('click',e=>{const w=e.target.closest('.w');if(w&&w.closest('#chLog')){chWord(w.dataset.w);return;}if(w&&w.closest('#vLog')){chWord(w.dataset.w,'#vWord');return;}if(w){$('#dIn').value=w.dataset.w;showTab('dict');lookup();}});
 const busy=(el,msg='處理中…')=>{el.classList.remove('hidden');el.innerHTML=`<span class="small">${msg}</span>`};
 const fail=(el,e)=>{el.classList.remove('hidden');el.innerHTML=`<span class="err">⚠️ ${esc(e.message)}</span>`};
 
@@ -126,7 +126,7 @@ async function chatSend(){const v=$('#chIn').value.trim(),h=chHist();if(!v&&h.le
   catch(e){$('#chWait')?.remove();$('#chLog').insertAdjacentHTML('beforeend',`<p class="err">⚠️ ${esc(e.message)}</p>`)}$('#chGo').disabled=!navigator.onLine&&!cfg().mock;}
 $('#chGo').onclick=chatSend;$('#chIn').onkeydown=e=>{if(e.key==='Enter')chatSend()};
 $('#chNew').onclick=()=>{if(!chHist().length||confirm('清除這次對話紀錄？')){setHist([]);$('#chWord').classList.add('hidden')}};
-async function chWord(w){const o=$('#chWord');busy(o,'查詢中…');await loadDict();const d=DICT[w.toLowerCase()];let r=null;
+async function chWord(w,box='#chWord'){const o=$(box);busy(o,'查詢中…');await loadDict();const d=DICT[w.toLowerCase()];let r=null;
   try{r=await api('/api/explain',{word:w})}catch{}
   o.innerHTML=`<div class="row" style="margin:0"><b class="en">${esc(w)}</b><button id="cwSay">🔊</button><button id="cwAdd">＋加入 Notion</button><button id="cwX">✕</button></div>
    ${r?`<div class="small">${esc(r.ipa)} ${esc(r.pos)}</div><p>${esc(r.zh)}</p><p class="small">${esc(r.definition)}<br>💬 ${esc(r.example)}</p>`:d?`<div class="small">/${esc(d[0])}/</div><p>${esc(d[1])}</p>`:'<p class="small">查不到</p>'}<div id="cwFb" class="small"></div>`;
@@ -136,6 +136,62 @@ async function chWord(w){const o=$('#chWord');busy(o,'查詢中…');await loadD
     try{const x=await api('/api/vocab',it,'POST');if(!x.skipped)setVocab([...vocab(),it]);$('#cwFb').innerHTML=`<span class="good">${x.skipped?'已經在單字頁了':'✅ 已加入 Notion'}</span>`}
     catch(e){setQueue([...queue(),it]);$('#cwFb').innerHTML=`<span class="err">⚠️ ${esc(e.message)}，已排隊</span>`}};}
 renderChat();
+
+// ---------- realtime voice (Gemini Live) ----------
+const V={ws:null,ctx:null,stream:null,node:null,src:null,an:null,playAt:0,sources:[],inT:'',outT:'',raf:0,mockT:[],state:'off'};
+const vHist=()=>JSON.parse(LS.eb_voice||'[]'),setVH=h=>{LS.eb_voice=JSON.stringify(h.slice(-60));renderVoice()};
+['vScen','vLvl'].forEach(id=>{const k='eb_'+id;if(LS[k])$('#'+id).value=LS[k];$('#'+id).onchange=()=>LS[k]=$('#'+id).value;});
+function renderVoice(){const h=vHist(),L=$('#vLog');
+  L.innerHTML=h.map((m,i)=>m.role==='ai'?`<div class="msg ai">${clickable(m.text)}</div>`:`<div class="msg me">${esc(m.text)}</div>${m.fix?(m.fix.isCorrect?'<div class="fix">✅ 文法正確</div>':`<div class="fix">✏️ ${diff(m.text,m.fix.corrected)}<br><b>${esc(m.fix.corrected)}</b><br>${esc(m.fix.explanation||'')}</div>`):''}`).join('');
+  if(V.inT)L.insertAdjacentHTML('beforeend',`<div class="msg me" style="opacity:.6">${esc(V.inT)}</div>`);
+  if(V.outT)L.insertAdjacentHTML('beforeend',`<div class="msg ai" style="opacity:.75">${esc(V.outT)}</div>`);L.scrollTop=L.scrollHeight;}
+function vSet(st,msg){V.state=st;const o=$('#orb');o.className={off:'idle',connecting:'connecting',listen:'listen',ai:'ai'}[st]||'idle';$('#vState').textContent=msg;
+  $('#vStart').classList.toggle('hidden',st!=='off');$('#vEnd').classList.toggle('hidden',st==='off');}
+function commitUser(){const t=V.inT.trim();V.inT='';if(!t)return;const h=vHist();h.push({role:'user',text:t});setVH(h);const idx=h.length-1;
+  api('/api/correct',{text:t}).then(r=>{const h2=vHist();if(h2[idx]&&h2[idx].text===t){h2[idx].fix=r;setVH(h2)}}).catch(()=>{});}
+function commitAI(){const t=V.outT.trim();V.outT='';if(!t)return;const h=vHist();h.push({role:'ai',text:t});setVH(h);}
+function stopPlayback(){V.sources.forEach(s=>{try{s.stop()}catch{}});V.sources=[];V.playAt=0;}
+function playPCM(b64){const bin=atob(b64),n=bin.length>>1,buf=V.ctx.createBuffer(1,n,24000),ch=buf.getChannelData(0);
+  for(let i=0;i<n;i++){let v=bin.charCodeAt(2*i)|(bin.charCodeAt(2*i+1)<<8);if(v>32767)v-=65536;ch[i]=v/32768;}
+  const s=V.ctx.createBufferSource();s.buffer=buf;s.connect(V.outAn);const t=Math.max(V.ctx.currentTime+.03,V.playAt);s.start(t);V.playAt=t+buf.duration;
+  V.sources.push(s);s.onended=()=>{V.sources=V.sources.filter(x=>x!==s);if(!V.sources.length&&V.state==='ai')vSet('listen','聆聽中…請說英文');};}
+const WORKLET=`class P extends AudioWorkletProcessor{constructor(){super();this.r=sampleRate/16000;this.acc=[];this.pos=0}
+process(i){const x=i[0][0];if(!x)return true;for(;this.pos<x.length;this.pos+=this.r)this.acc.push(x[Math.floor(this.pos)]);this.pos-=x.length;
+if(this.acc.length>=1600){const a=new Int16Array(this.acc.length);for(let k=0;k<a.length;k++){const s=Math.max(-1,Math.min(1,this.acc[k]));a[k]=s<0?s*32768:s*32767}this.port.postMessage(a.buffer,[a.buffer]);this.acc=[]}return true}}registerProcessor('pcm16k',P)`;
+function orbLoop(){const o=$('#orb'),d=new Uint8Array(256);const f=()=>{let lv=0;const an=V.state==='ai'?V.outAn:V.an;
+  if(an){an.getByteTimeDomainData(d);let s=0;for(const v of d)s+=(v-128)**2;lv=Math.sqrt(s/d.length)/40;}
+  if(V.state==='listen'||V.state==='ai')o.style.transform=`scale(${1+Math.min(lv*.5,.22)})`;else o.style.transform='';V.raf=requestAnimationFrame(f)};f();}
+async function vStart(){if(V.state!=='off')return;const c=cfg();vSet('connecting','連線中…');
+  try{V.ctx=new (window.AudioContext||window.webkitAudioContext)();await V.ctx.resume();V.outAn=V.ctx.createAnalyser();V.outAn.connect(V.ctx.destination);orbLoop();
+    if(c.mock)return vMock();
+    if(!navigator.mediaDevices?.getUserMedia)throw new Error('這個瀏覽器不支援麥克風串流');
+    const [tok,stream]=await Promise.all([api('/api/live-token',{scenario:$('#vScen').value,level:$('#vLvl').value}),navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1}})]);
+    V.stream=stream;await V.ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET],{type:'application/javascript'})));
+    V.src=V.ctx.createMediaStreamSource(stream);V.an=V.ctx.createAnalyser();V.src.connect(V.an);V.node=new AudioWorkletNode(V.ctx,'pcm16k');V.src.connect(V.node);
+    const ws=V.ws=new WebSocket('wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token='+encodeURIComponent(tok.token));
+    ws.onopen=()=>ws.send(JSON.stringify({setup:{model:'models/'+tok.model}}));
+    ws.onmessage=async e=>{const m=JSON.parse(typeof e.data==='string'?e.data:await e.data.text());
+      if(m.setupComplete){vSet('listen','聆聽中…請說英文');ws.send(JSON.stringify({realtimeInput:{text:'(Lee just joined the call. Greet Lee in character and ask your first question.)'}}));
+        V.node.port.onmessage=ev=>{if(ws.readyState===1){const u=new Uint8Array(ev.data);let b='';for(let i=0;i<u.length;i+=8192)b+=String.fromCharCode.apply(null,u.subarray(i,i+8192));ws.send(JSON.stringify({realtimeInput:{audio:{data:btoa(b),mimeType:'audio/pcm;rate=16000'}}}))}};}
+      const sc=m.serverContent;if(!sc)return;
+      if(sc.inputTranscription?.text){V.inT+=sc.inputTranscription.text;renderVoice();}
+      if(sc.interrupted){stopPlayback();commitAI();vSet('listen','聆聽中…');}
+      if(sc.modelTurn?.parts)for(const p of sc.modelTurn.parts)if(p.inlineData?.data){if(V.inT)commitUser();if(V.state!=='ai')vSet('ai','AI 說話中…（可直接插話）');playPCM(p.inlineData.data);}
+      if(sc.outputTranscription?.text){if(V.inT)commitUser();V.outT+=sc.outputTranscription.text;renderVoice();}
+      if(sc.turnComplete){commitUser();commitAI();}};
+    ws.onclose=e=>{if(V.state!=='off'){vEnd();$('#vState').textContent=e.code===1000?'已結束':`連線中斷（${e.code}${e.reason?'：'+e.reason.slice(0,80):''}）`;}};
+    ws.onerror=()=>{};
+  }catch(e){vEnd();$('#vState').textContent='⚠️ '+e.message;}}
+function vEnd(){const ws=V.ws;V.ws=null;if(ws&&ws.readyState<2)ws.close(1000);V.mockT.forEach(clearTimeout);V.mockT=[];stopPlayback();commitUser();commitAI();
+  V.stream?.getTracks().forEach(t=>t.stop());V.stream=null;cancelAnimationFrame(V.raf);V.ctx?.close().catch(()=>{});V.ctx=null;V.an=null;vSet('off','點一下開始');}
+function vMock(){vSet('listen','（示範模式）聆聽中…');const T=(ms,f)=>V.mockT.push(setTimeout(f,ms));
+  const tone=()=>{const o=V.ctx.createOscillator(),g=V.ctx.createGain();o.frequency.value=220;g.gain.value=.04;o.connect(g).connect(V.outAn);o.start();o.stop(V.ctx.currentTime+1.6);};
+  const ai=(t,ms)=>{T(ms,()=>{vSet('ai','AI 說話中…（示範）');tone();V.outT=t;renderVoice();});T(ms+1800,()=>{commitAI();vSet('listen','（示範模式）聆聽中…');});};
+  ai('Hi Lee! Welcome to Sunny Cafe. What would you like to order today?',600);
+  T(3200,()=>{V.inT='I wants a hamburger and two coffee.';renderVoice();});T(4400,()=>commitUser());
+  ai('Great choice! Would you like fries with your hamburger?',4700);}
+$('#vStart').onclick=vStart;$('#orb').onclick=()=>V.state==='off'&&vStart();$('#vEnd').onclick=vEnd;
+$('#vClear').onclick=()=>{if(confirm('清除語音對話紀錄？'))setVH([])};renderVoice();vSet('off','點一下開始');
 
 // ---------- settings ----------
 $('#sUrl').value=LS.eb_url||DEFAULT_URL;$('#sCode').value=LS.eb_code||'';$('#sMock').checked=cfg().mock;
