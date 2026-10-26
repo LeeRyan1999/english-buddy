@@ -1,75 +1,41 @@
 <!doctype html>
 <html lang="zh-Hant-TW"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<meta name="theme-color" content="#0f1115"><meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#07090d"><meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="英語夥伴">
 <title>英語夥伴 English Buddy</title>
 <link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=3"><link rel="icon" href="icon-192.png?v=3">
-<link rel="stylesheet" href="style.css">
+<link rel="stylesheet" href="style.css?v=7">
 </head><body>
-<header><h1>英語夥伴</h1><div id="status" class="pill"></div></header>
-<nav id="tabs">
-  <button data-tab="voice" class="on">語音</button><button data-tab="chat">對話</button><button data-tab="translate">中翻英</button><button data-tab="correct">文法</button>
-  <button data-tab="dict">單字</button><button data-tab="quiz">抽考</button><button data-tab="settings">設定</button>
-</nav>
-<main>
+<header id="top"><button id="scenBtn" class="chip">☕ 閒聊 · 中級</button><div id="status" class="pill"></div></header>
+<nav id="tabs" class="hidden"><button data-tab="voice" class="on">語音</button><button data-tab="settings">設定</button></nav>
 <section id="voice" class="tab on">
-  <p class="hint">即時語音對話：點一下開始，直接開口說英文，可以隨時插話打斷 AI。<span class="net">需連網</span></p>
-  <div class="row"><select id="vScen"><option value="order">🍔 點餐</option><option value="travel">✈️ 旅遊/機場</option><option value="interview">💼 面試</option><option value="shopping">🛍️ 購物</option><option value="chat" selected>☕ 閒聊</option></select>
-  <select id="vLvl"><option value="beginner">初級</option><option value="intermediate" selected>中級</option><option value="advanced">高級</option></select>
-  <button id="vClear">清除紀錄</button></div>
-  <div id="orbWrap"><div id="orb"><div id="orbCore"></div></div><div id="vState">點一下開始</div></div>
-  <div class="row"><button class="pri" id="vStart">🎙️ 開始語音對話</button><button id="vEnd" class="end hidden">結束</button></div>
+  <canvas id="orb"></canvas>
+  <div id="vState" aria-live="polite">點一下開始</div>
   <div id="vLog"></div>
-  <div id="vWord" class="card hidden"></div>
-  <p class="small">耳機效果最好。如果語音不能用，請改用「對話」分頁的文字模式。</p>
+  <div id="fixToast" class="hidden"></div>
+  <div id="controls">
+    <button id="vMute" class="ib" aria-label="靜音"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/><path class="slash" d="M4 4l16 16"/></svg></button>
+    <button id="vCap" class="ib" aria-label="字幕"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 10.5a2 2 0 1 0 0 3M16 10.5a2 2 0 1 0 0 3"/></svg></button>
+    <button id="vSet" class="ib" aria-label="設定"><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7h10M18 7h2M4 17h4M12 17h8"/><circle cx="16" cy="7" r="2"/><circle cx="10" cy="17" r="2"/></svg></button>
+    <button id="vMain" class="ib main" aria-label="開始"><span class="go">開始</span><svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+  </div>
 </section>
-<section id="chat" class="tab">
-  <p class="hint">和 AI 用英文聊天，每句都幫你改文法；點 AI 回覆裡的單字可查意思。<span class="net">需連網</span></p>
-  <div class="row"><select id="chScen"><option value="order">🍔 點餐</option><option value="travel">✈️ 旅遊/機場</option><option value="interview">💼 面試</option><option value="shopping">🛍️ 購物</option><option value="chat" selected>☕ 閒聊</option><option value="custom">✏️ 自訂</option></select>
-  <select id="chLvl"><option value="beginner">初級</option><option value="intermediate" selected>中級</option><option value="advanced">高級</option></select>
-  <button id="chNew">↺ 清除重來</button></div>
-  <input id="chCustom" class="hidden" placeholder="自訂情境，例如：在醫院掛號">
-  <div id="chLog"></div>
-  <div id="chWord" class="card hidden"></div>
-  <div class="row"><input id="chIn" placeholder="Type in English…" autocapitalize="sentences"><button class="mic" data-target="chIn" data-lang="en-US">🎤</button><button class="pri" id="chGo">送出</button></div>
-</section>
-<section id="translate" class="tab">
-  <p class="hint">說中文或打字，翻成英文並朗讀。<span class="net">需連網</span></p>
-  <textarea id="tIn" placeholder="例如：我明天想去看電影"></textarea>
-  <div class="row"><button class="mic" data-target="tIn" data-lang="zh-TW">🎤 說中文</button><button class="pri" id="tGo">翻譯</button></div>
-  <div id="tOut" class="card hidden"></div>
-  <p class="hint small">小技巧：說「加入到Notion英文單字頁面 apple」可直接加單字。</p>
-</section>
-<section id="correct" class="tab">
-  <p class="hint">說或打一句英文，幫你修正文法。<span class="net">需連網</span></p>
-  <textarea id="cIn" placeholder="e.g. Yesterday I go to school and eat apple."></textarea>
-  <div class="row"><button class="mic" data-target="cIn" data-lang="en-US">🎤 說英文</button><button class="pri" id="cGo">修正</button></div>
-  <div id="cOut" class="card hidden"></div>
-</section>
-<section id="dict" class="tab">
-  <p class="hint">查單字：離線用內建字典（5000 常用字），連網時給更完整的解釋。</p>
-  <div class="row"><input id="dIn" placeholder="輸入英文單字" autocapitalize="off"><button class="pri" id="dGo">查詢</button></div>
-  <div id="dOut" class="card hidden"></div>
-</section>
-<section id="quiz" class="tab">
-  <p class="hint">從你的 Notion 單字庫隨機抽考，用中文或英文回答都可以。<span class="ok">離線可用</span></p>
-  <div class="row"><button id="qSync">↻ 同步單字</button><span id="qCount" class="small"></span></div>
-  <div class="row"><input id="addIn" placeholder="新增單字到 Notion" autocapitalize="off"><button class="pri" id="addGo">＋加入</button></div>
-  <div id="queueInfo" class="small"></div>
-  <div class="card" id="qCard"><div id="qWord" class="big">按「出題」開始</div>
-    <div class="row"><input id="qAns" placeholder="這個字是什麼意思？"><button class="mic" data-target="qAns" data-lang="zh-TW">🎤</button></div>
-    <div class="row"><button class="pri" id="qCheck">作答</button><button id="qNext">出題</button><button id="qSay">🔊</button></div>
-    <div id="qFb"></div></div>
-</section>
-<section id="settings" class="tab">
-  <label>後台網址<input id="sUrl" placeholder="https://english-buddy-api-0cz1.onrender.com" autocapitalize="off"></label>
+<section id="settings" class="tab"><div class="row" style="align-items:center"><button id="sBack">‹ 回到語音</button></div>
+  <h3>對話</h3>
+  <label>情境<select id="sScen"><option value="order">🍔 點餐</option><option value="travel">✈️ 旅遊/機場</option><option value="interview">💼 面試</option><option value="shopping">🛍️ 購物</option><option value="chat" selected>☕ 閒聊</option></select></label>
+  <label>程度<select id="sLvl"><option value="beginner">初級</option><option value="intermediate" selected>中級</option><option value="advanced">高級</option></select></label>
+  <label>AI 聲音<select id="sVoice"></select></label>
+  <label>說話速度<select id="sSpeed"><option value="normal">正常</option><option value="slow">慢一點</option></select></label>
+  <div class="row"><button id="vClear">清除對話紀錄</button></div>
+  <h3>連線</h3>
+  <label>後台網址<input id="sUrl" autocapitalize="off"></label>
   <label>存取碼<input id="sCode" type="password" autocomplete="off"></label>
   <label class="chk"><input type="checkbox" id="sMock"> 示範模式（不連後台，用假資料測試介面）</label>
   <div class="row"><button class="pri" id="sSave">儲存</button><button id="sTest">測試連線</button></div>
   <div id="sOut" class="small"></div>
-  <p class="hint small">網址和存取碼只存在這台裝置。離線功能：抽考已同步的單字、內建字典、打字輸入。需要連網：翻譯、文法修正、詳細解釋、同步 Notion（離線新增的單字會排隊，連網後自動上傳）。<br>字典資料來自 ECDICT（MIT 授權）。</p>
+  <p class="small dim">設定只存在這台裝置。戴耳機效果最好；說話時可直接打斷 AI。點字幕裡的英文單字可看解釋並加入 Notion。</p>
 </section>
-</main>
-<script src="app.js"></script>
+<div id="sheet" class="sheet hidden"><div class="sheetIn" id="sheetIn"></div></div>
+<script src="app.js?v=7"></script>
 </body></html>

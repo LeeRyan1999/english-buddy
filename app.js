@@ -1,204 +1,210 @@
 'use strict';
 const $=s=>document.querySelector(s), LS=localStorage;
 const DEFAULT_URL='https://english-buddy-api-0cz1.onrender.com';
+const WSS='wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token=';
 const cfg=()=>({url:(LS.eb_url||DEFAULT_URL).replace(/\/+$/,''),code:LS.eb_code||'',mock:LS.eb_mock==='1'||(LS.eb_mock!=='0'&&!LS.eb_code)});
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-let DICT=null; const loadDict=async()=>DICT||(DICT=await (await fetch('dict.json')).json());
-const vocab=()=>JSON.parse(LS.eb_vocab||'[]'), setVocab=v=>{LS.eb_vocab=JSON.stringify(v);renderCount()};
-const queue=()=>JSON.parse(LS.eb_queue||'[]'), setQueue=q=>{LS.eb_queue=JSON.stringify(q);renderCount()};
+const SCEN={order:'🍔 點餐',travel:'✈️ 旅遊/機場',interview:'💼 面試',shopping:'🛍️ 購物',chat:'☕ 閒聊'},LVL={beginner:'初級',intermediate:'中級',advanced:'高級'};
+const VOICES={Puck:'Puck（活潑・男）',Charon:'Charon（沉穩・男）',Kore:'Kore（堅定・女）',Fenrir:'Fenrir（興奮・男）',Aoede:'Aoede（輕快・女）',Leda:'Leda（年輕・女）',Orus:'Orus（穩重・男）',Zephyr:'Zephyr（明亮・女）'};
+const pref=k=>LS['eb_'+k]||{scen:'chat',lvl:'intermediate',voice:'Puck',speed:'normal'}[k];
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 
-// ---------- status ----------
+// ---------- status / warm-up ----------
+const W={state:'idle',tok:null,tokAt:0,tokKey:''};
 function renderStatus(){const s=$('#status'),c=cfg();
   if(!navigator.onLine){s.className='pill off';s.textContent='● 離線';}
   else if(c.mock){s.className='pill mock';s.textContent='● 示範模式';}
-  else{s.className='pill';s.textContent='● 已連線';}
-  document.querySelectorAll('#tGo,#cGo,#chGo,#vStart').forEach(b=>b.disabled=!navigator.onLine&&!c.mock);}
-addEventListener('online',()=>{renderStatus();flushQueue()});addEventListener('offline',renderStatus);
+  else if(W.state==='waking'){s.className='pill wake';s.textContent='◌ 喚醒伺服器…';}
+  else if(W.state==='down'){s.className='pill off';s.textContent='● 伺服器無回應';}
+  else{s.className='pill';s.textContent='● 已連線';}}
+async function warm(){const c=cfg();if(c.mock||!navigator.onLine||W.state==='ready'||W.state==='waking')return W.state==='ready';
+  W.state='waking';renderStatus();const t0=Date.now();
+  while(Date.now()-t0<90e3){try{const ac=new AbortController(),to=setTimeout(()=>ac.abort(),15e3);const r=await fetch(c.url+'/health',{signal:ac.signal});clearTimeout(to);if(r.ok){W.state='ready';renderStatus();prefetchToken();return true}}catch{}await sleep(2500);}
+  W.state='down';renderStatus();return false;}
+addEventListener('online',()=>{renderStatus();warm();flushQueue()});addEventListener('offline',renderStatus);
+document.addEventListener('visibilitychange',()=>{if(!document.hidden){warm();if(V.on)lockWake();}});
 
 // ---------- tabs ----------
 document.querySelectorAll('#tabs button').forEach(b=>b.onclick=()=>{
   document.querySelectorAll('#tabs button,.tab').forEach(x=>x.classList.remove('on'));b.classList.add('on');$('#'+b.dataset.tab).classList.add('on');});
-const showTab=t=>document.querySelector(`#tabs [data-tab=${t}]`).click();
 
 // ---------- API ----------
 async function api(path,body,method){const c=cfg();
-  if(c.mock)return mock(path,body,method);
-  if(!navigator.onLine)throw new Error('目前離線，這個功能需要網路');
-  if(!c.url)throw new Error('請先到「設定」填後台網址');
+  if(c.mock)return mock(path,body);
+  if(!navigator.onLine)throw new Error('目前離線');
   const r=await fetch(c.url+path,{method:method||(body?'POST':'GET'),headers:{'Content-Type':'application/json','X-Access-Code':c.code},body:body&&JSON.stringify(body)});
-  const j=await r.json().catch(()=>({error:'後台回應錯誤 '+r.status}));if(!r.ok)throw new Error(j.error||r.status);return j;}
-async function mock(path,b,method){await new Promise(r=>setTimeout(r,250));
-  if(path==='/api/translate'){const m={'我明天想去看電影':'I want to go to the movies tomorrow.','你好':'Hello.','謝謝':'Thank you.'};
-    return{english:m[b.text.trim()]||`[示範] English for: ${b.text}`,alt:'(casual) I wanna catch a movie tomorrow.',note:'示範模式回應，接上後台後會用 AI 翻譯。'};}
-  if(path==='/api/correct'){let s=b.text;const fx=[[/\bI go\b/g,'I went'],[/\beat apple\b/g,'ate an apple'],[/\bhe go\b/gi,'he goes'],[/\bi\b/g,'I'],[/\bI wants\b/g,'I want'],[/\btwo coffee\b/g,'two coffees']];
-    fx.forEach(([a,c])=>s=s.replace(a,c));return{corrected:s,isCorrect:s===b.text,explanation:s===b.text?'這句沒有問題！':(/Yesterday/.test(b.text)?'Yesterday 是過去時間，動詞要用過去式（go→went, eat→ate）；可數名詞 apple 單數前要加 an。':'主詞 I 的動詞不加 s（wants→want）；可數名詞複數要加 s（coffee→coffees）。')+'（示範模式）'};}
-  if(path==='/api/explain'){await loadDict();const d=DICT[b.word.toLowerCase()];return{word:b.word,ipa:d?.[0]||'',pos:(d?.[1]||'').split(' ')[0],definition:d?.[2]||'(mock)',zh:d?.[1]||'（示範）',example:`This is an example with "${b.word}".`,exampleZh:'這是示範例句。'};}
-  if(path==='/api/chat'){const last=[...b.messages].reverse().find(m=>m.role==='user');const Q={order:"Hi! Welcome to Sunny Cafe. What would you like to order today?",travel:"Good morning! May I see your passport, please? Where are you flying today?",interview:"Thanks for coming in. Could you tell me a little about yourself?",shopping:"Hi there! Are you looking for anything special today?",chat:"Hey! How was your day today?"};
-    if(!last)return{reply:Q[b.scenario]||`Let's practice: ${b.scenario}. How would you like to start?`,correction:null};
-    const c=await mock('/api/correct',{text:last.text});return{reply:"That sounds great! Can you tell me more about it?",correction:{corrected:c.corrected,isCorrect:c.isCorrect,note:c.isCorrect?'':c.explanation}};}
-  if(path==='/api/quizcheck'){const ok=b.answer&&(b.meaning||'').split(/[,，；;\/ ]+/).some(x=>x.length>0&&(b.answer.includes(x.replace(/^[a-z]+\.\s*/,''))||x.includes(b.answer)));return{correct:!!ok,feedback:ok?'答對了！👏':`再想想～參考答案：${b.meaning}`};}
-  if(path==='/api/vocab'&&method!=='POST'&&!b){const mv=JSON.parse(LS.eb_mockdb||'null')||[{word:'apple',meaning:'蘋果',example:'I eat an apple every day.'},{word:'brave',meaning:'勇敢的',example:'She is very brave.'},{word:'schedule',meaning:'行程；時間表',example:'My schedule is full today.'},{word:'improve',meaning:'改善；進步',example:'I want to improve my English.'}];return{words:mv};}
-  if(path==='/api/vocab'){await loadDict();const d=DICT[b.word.toLowerCase()];const w={word:b.word,meaning:b.meaning||d?.[1]||'（待補）',example:b.example||'',added:b.added};
-    const mv=(await mock('/api/vocab')).words;mv.push(w);LS.eb_mockdb=JSON.stringify(mv);return{ok:true,...w};}
-  throw new Error('mock: unknown');}
+  const j=await r.json().catch(()=>({error:'後台回應錯誤 '+r.status}));if(!r.ok){const e=new Error(r.status===401?'存取碼錯誤，請到「設定」確認':j.error||r.status);e.status=r.status;throw e}return j;}
+async function mock(path,b){await sleep(250);
+  if(path==='/api/correct'){let s=b.text;[[/\bI wants\b/g,'I want'],[/\btwo coffee\b/g,'two coffees'],[/\bI go\b/g,'I went']].forEach(([a,c])=>s=s.replace(a,c));
+    return{corrected:s,isCorrect:s===b.text,explanation:s===b.text?'這句沒有問題！':'主詞 I 的動詞不加 s（wants→want）；可數名詞複數要加 s（coffee→coffees）。（示範模式）'};}
+  if(path==='/api/explain')return{word:b.word,ipa:'',pos:'',definition:'(demo definition)',zh:'（示範模式解釋）',example:`This is an example with "${b.word}".`};
+  if(path==='/api/vocab')return{ok:true,word:b.word};throw new Error('mock');}
 
-// ---------- speech ----------
-const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
-document.querySelectorAll('.mic').forEach(b=>{if(!SR){b.title='這個瀏覽器不支援語音輸入，請用打字';b.disabled=true;return;}
-  b.onclick=()=>{const r=new SR();r.lang=b.dataset.lang;r.interimResults=true;const t=$('#'+b.dataset.target);b.classList.add('rec');
-    r.onresult=e=>{t.value=[...e.results].map(x=>x[0].transcript).join('');};
-    r.onerror=e=>{b.classList.remove('rec');if(e.error==='network')alert('語音辨識需要網路，請改用打字');};
-    r.onend=()=>{b.classList.remove('rec');const id=b.dataset.target;if(id==='tIn')$('#tGo').click();if(id==='cIn')$('#cGo').click();if(id==='chIn')$('#chGo').click();};r.start();};});
-function say(text,lang='en-US'){if(!window.speechSynthesis)return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(text);u.lang=lang;u.rate=.95;
-  const v=speechSynthesis.getVoices().find(v=>v.lang===lang);if(v)u.voice=v;speechSynthesis.speak(u);}
+// ---------- Notion queue ----------
+const queue=()=>JSON.parse(LS.eb_queue||'[]'),setQueue=q=>LS.eb_queue=JSON.stringify(q);
+async function flushQueue(){const q=queue();if(!q.length||!navigator.onLine)return;const left=[];for(const it of q){try{await api('/api/vocab',it,'POST')}catch{left.push(it)}}setQueue(left);}
+
+// ---------- sheet ----------
+const sheet=html=>{$('#sheetIn').innerHTML=html;$('#sheet').classList.remove('hidden')},closeSheet=()=>$('#sheet').classList.add('hidden');
+$('#sheet').onclick=e=>{if(e.target.id==='sheet')closeSheet()};
+function say(t){if(!window.speechSynthesis)return;speechSynthesis.cancel();const u=new SpeechSynthesisUtterance(t);u.lang='en-US';u.rate=.9;speechSynthesis.speak(u)}
+async function wordSheet(w){sheet(`<b style="font-size:22px">${esc(w)}</b><p class="dim">查詢中…</p>`);let r=null,err='';
+  try{r=await api('/api/explain',{word:w})}catch(e){err=e.message}
+  sheet(`<div class="row" style="align-items:center;margin:0"><b style="font-size:22px;flex:1">${esc(w)}</b><button id="wSay">🔊</button><button id="wX">✕</button></div>
+   ${r?`<div class="small dim">${esc(r.ipa)} ${esc(r.pos)}</div><p style="font-size:18px">${esc(r.zh)}</p><p class="small">${esc(r.definition)}<br>💬 ${esc(r.example)}</p>`:`<p class="err small">⚠️ ${esc(err)}</p>`}
+   <button class="pri" id="wAdd" style="width:100%">＋ 加入 Notion 單字頁</button><div id="wFb" class="small" style="margin-top:8px"></div>`);
+  $('#wSay').onclick=()=>say(w);$('#wX').onclick=closeSheet;
+  $('#wAdd').onclick=async()=>{const it={word:w.toLowerCase(),meaning:r?.zh||'',example:r?.example||'',added:new Date().toISOString().slice(0,10)};$('#wAdd').disabled=true;
+    if(!navigator.onLine){setQueue([...queue(),it]);$('#wFb').textContent='離線中，已排隊，連網後上傳';return;}
+    try{const x=await api('/api/vocab',it,'POST');$('#wFb').innerHTML=`<span class="good">${x.skipped?'已經在單字頁了':'✅ 已加入 Notion'}</span>`}
+    catch(e){setQueue([...queue(),it]);$('#wFb').innerHTML=`<span class="err">⚠️ ${esc(e.message)}，已排隊</span>`}};}
+function scenSheet(){const opt=(k,o)=>Object.entries(o).map(([v,l])=>`<button data-k="${k}" data-v="${v}" class="${pref(k)===v?'on':''}">${l}</button>`).join('');
+  sheet(`<h3>情境</h3><div class="opts">${opt('scen',SCEN)}</div><h3>程度</h3><div class="opts">${opt('lvl',LVL)}</div><h3>速度</h3><div class="opts">${opt('speed',{normal:'正常',slow:'慢一點'})}</div>
+   <p class="small dim">${V.on?'變更會在下次開始對話時生效。':''}</p><button class="pri" style="width:100%" id="scOk">完成</button>`);
+  $('#sheetIn').querySelectorAll('[data-k]').forEach(b=>b.onclick=()=>{LS['eb_'+b.dataset.k]=b.dataset.v;W.tok=null;scenSheet();syncPrefs()});$('#scOk').onclick=closeSheet;}
+$('#scenBtn').onclick=scenSheet;
+function syncPrefs(){$('#scenBtn').textContent=`${pref('voice')} · ${SCEN[pref('scen')]} · ${LVL[pref('lvl')]}${pref('speed')==='slow'?' · 慢速':''}`;
+  $('#sScen').value=pref('scen');$('#sLvl').value=pref('lvl');$('#sVoice').value=pref('voice');$('#sSpeed').value=pref('speed');}
+
+// ---------- transcript ----------
 const clickable=s=>esc(s).replace(/[A-Za-z][A-Za-z'-]*/g,w=>`<span class="w" data-w="${w}">${w}</span>`);
-document.addEventListener('click',e=>{const w=e.target.closest('.w');if(w&&w.closest('#chLog')){chWord(w.dataset.w);return;}if(w&&w.closest('#vLog')){chWord(w.dataset.w,'#vWord');return;}if(w){$('#dIn').value=w.dataset.w;showTab('dict');lookup();}});
-const busy=(el,msg='處理中…')=>{el.classList.remove('hidden');el.innerHTML=`<span class="small">${msg}</span>`};
-const fail=(el,e)=>{el.classList.remove('hidden');el.innerHTML=`<span class="err">⚠️ ${esc(e.message)}</span>`};
-
-// ---------- translate (+ Notion command) ----------
-const CMD=/加入?(?:到|至)?\s*notion\s*(?:的)?\s*(?:英文)?\s*(?:單字|單詞)?\s*(?:頁面|頁|庫)?\s*[:：]?\s*([A-Za-z][A-Za-z' -]*)$/i;
-$('#tGo').onclick=async()=>{const v=$('#tIn').value.trim(),o=$('#tOut');if(!v)return;
-  const m=v.match(CMD);if(m){$('#addIn').value=m[1].trim();showTab('quiz');return addWord();}
-  busy(o);try{const r=await api('/api/translate',{text:v});
-    o.innerHTML=`<div class="en">${clickable(r.english)}</div>${r.alt?`<div class="small">其他說法：${clickable(r.alt)}</div>`:''}${r.note?`<p class="small">${esc(r.note)}</p>`:''}
-    <div class="row"><button id="tSay">🔊 朗讀</button></div><div class="small">點英文單字可查意思</div>`;
-    $('#tSay').onclick=()=>say(r.english);say(r.english);}catch(e){fail(o,e)}};
-
-// ---------- correct ----------
 function diff(a,b){const A=a.split(/\s+/),B=b.split(/\s+/),n=A.length,m=B.length,L=[...Array(n+1)].map(()=>Array(m+1).fill(0));
   for(let i=n-1;i>=0;i--)for(let j=m-1;j>=0;j--)L[i][j]=A[i]===B[j]?L[i+1][j+1]+1:Math.max(L[i+1][j],L[i][j+1]);
-  let i=0,j=0,out=[];while(i<n&&j<m){if(A[i]===B[j]){out.push(esc(A[i]));i++;j++}else if(L[i+1][j]>=L[i][j+1])out.push(`<del>${esc(A[i++])}</del>`);else out.push(`<ins>${esc(B[j++])}</ins>`);}
-  while(i<n)out.push(`<del>${esc(A[i++])}</del>`);while(j<m)out.push(`<ins>${esc(B[j++])}</ins>`);return out.join(' ');}
-$('#cGo').onclick=async()=>{const v=$('#cIn').value.trim(),o=$('#cOut');if(!v)return;busy(o);
-  try{const r=await api('/api/correct',{text:v});
-    o.innerHTML=r.isCorrect?`<div class="good">✅ 文法正確！</div><div class="en">${clickable(r.corrected)}</div>`:
-      `<div class="small">修改標示：</div><div>${diff(v,r.corrected)}</div><div class="small" style="margin-top:8px">正確句子：</div><div class="en">${clickable(r.corrected)}</div>`;
-    o.innerHTML+=`<p>${esc(r.explanation)}</p><button id="cSay">🔊 朗讀正確句子</button>`;$('#cSay').onclick=()=>say(r.corrected);}catch(e){fail(o,e)}};
-
-// ---------- dictionary ----------
-async function lookup(){const w=$('#dIn').value.trim().toLowerCase(),o=$('#dOut');if(!w)return;busy(o,'查詢中…');await loadDict();
-  const d=DICT[w];let html=d?`<div class="big">${esc(w)} <button id="dSay">🔊</button></div><div class="small">/${esc(d[0])}/ · 內建字典</div><p>${esc(d[1])}</p><p class="small">${esc(d[2])}</p>`:`<div class="big">${esc(w)}</div><p class="small">內建字典沒有這個字。</p>`;
-  o.innerHTML=html+`<div id="dMore"></div><div class="row"><button id="dAdd">＋加入 Notion 單字庫</button></div>`;
-  $('#dAdd').onclick=()=>{$('#addIn').value=w;showTab('quiz');addWord(d?.[1]);};
-  const ds=$('#dSay');if(ds)ds.onclick=()=>say(w);
-  if(navigator.onLine&&(cfg().url||cfg().mock)){try{const r=await api('/api/explain',{word:w});
-    $('#dMore').innerHTML=`<div class="card"><b>${esc(r.word)}</b> ${r.ipa?`<span class="small">${esc(r.ipa)}</span>`:''} <i class="small">${esc(r.pos)}</i>${d?'':' <button id="dSay2">🔊</button>'}
-      <p>${esc(r.zh)}</p><p class="small">${esc(r.definition)}</p><p>💬 ${esc(r.example)}<br><span class="small">${esc(r.exampleZh)}</span></p></div>`;
-    const s2=$('#dSay2');if(s2)s2.onclick=()=>say(w);}catch(e){$('#dMore').innerHTML=`<p class="small">詳細解釋需連網：${esc(e.message)}</p>`}}
-  else $('#dMore').innerHTML='<p class="small">離線中：只顯示內建字典。</p>';}
-$('#dGo').onclick=lookup;$('#dIn').onkeydown=e=>{if(e.key==='Enter')lookup()};
-
-// ---------- vocab / quiz ----------
-function renderCount(){$('#qCount').textContent=`已快取 ${vocab().length} 個單字`;const q=queue();$('#queueInfo').textContent=q.length?`⏳ ${q.length} 個單字等待上傳到 Notion（連網後自動同步）：${q.map(x=>x.word).join(', ')}`:'';}
-async function sync(){const b=$('#qSync');b.disabled=true;try{await flushQueue();const r=await api('/api/vocab');setVocab(r.words);$('#qFb').innerHTML=`<span class="good">已同步 ${r.words.length} 個單字</span>`}catch(e){$('#qFb').innerHTML=`<span class="err">⚠️ ${esc(e.message)}（使用快取單字）</span>`}b.disabled=false;}
-async function flushQueue(){const q=queue();if(!q.length||!navigator.onLine)return;const left=[];
-  for(const it of q){try{await api('/api/vocab',it,'POST')}catch{left.push(it)}}setQueue(left);}
-async function addWord(meaning){const w=$('#addIn').value.trim();if(!w)return;const it={word:w,meaning:meaning||'',added:new Date().toISOString().slice(0,10)};
-  if(!navigator.onLine){setQueue([...queue(),it]);setVocab([...vocab(),{...it}]);$('#qFb').innerHTML=`<span class="good">離線中，「${esc(w)}」已排隊，連網後上傳</span>`;$('#addIn').value='';return;}
-  $('#qFb').textContent='加入中…';try{const r=await api('/api/vocab',it,'POST');if(r.skipped){$('#qFb').innerHTML=`<span class="good">「${esc(r.word)}」已經在 Notion 單字頁了</span>`;$('#addIn').value='';return;}setVocab([...vocab(),{word:r.word,meaning:r.meaning,example:r.example,added:it.added}]);
-    $('#qFb').innerHTML=`<span class="good">✅ 已加入 Notion：${esc(r.word)}${r.meaning?' — '+esc(r.meaning):''}</span>`;$('#addIn').value='';}
-  catch(e){setQueue([...queue(),it]);$('#qFb').innerHTML=`<span class="err">⚠️ ${esc(e.message)}，已先排隊稍後重試</span>`}}
-$('#qSync').onclick=sync;$('#addGo').onclick=()=>addWord();
-let cur=null;
-$('#qNext').onclick=()=>{const v=vocab();if(!v.length){$('#qFb').textContent='還沒有單字，先按「同步單字」或新增';return;}
-  cur=v[Math.floor(Math.random()*v.length)];$('#qWord').textContent=cur.word;$('#qAns').value='';$('#qFb').textContent='What does it mean? 用中文或英文回答';say(cur.word);};
-$('#qSay').onclick=()=>cur&&say(cur.word);
-$('#qCheck').onclick=async()=>{if(!cur)return $('#qNext').click();const a=$('#qAns').value.trim();if(!a)return;
-  const local=()=>{const keys=(cur.meaning||'').replace(/[a-z]+\.\s*/g,'').split(/[,，；;、\/\s]+/).filter(x=>x.length);const ok=keys.some(k=>a.includes(k)||k.includes(a));
-    return{correct:ok,feedback:ok?'答對了！👏':'不太對喔'}};
-  let r;if(navigator.onLine&&(cfg().url||cfg().mock)){try{r=await api('/api/quizcheck',{word:cur.word,meaning:cur.meaning,answer:a})}catch{r=local()}}else r=local();
-  $('#qFb').innerHTML=`<div class="${r.correct?'good':'bad'}">${r.correct?'✅':'❌'} ${esc(r.feedback)}</div><p class="small">參考：${esc(cur.meaning)}${cur.example?'<br>💬 '+esc(cur.example):''}</p>`;};
-$('#qAns').onkeydown=e=>{if(e.key==='Enter')$('#qCheck').click()};
-
-// ---------- chat ----------
-const chHist=()=>JSON.parse(LS.eb_chat||'[]'),setHist=h=>{LS.eb_chat=JSON.stringify(h);renderChat()};
-['chScen','chLvl'].forEach(id=>{const k='eb_'+id;if(LS[k])$('#'+id).value=LS[k];$('#'+id).onchange=()=>{LS[k]=$('#'+id).value;$('#chCustom').classList.toggle('hidden',$('#chScen').value!=='custom');}});
-$('#chCustom').value=LS.eb_chCustom||'';$('#chCustom').oninput=()=>LS.eb_chCustom=$('#chCustom').value;$('#chCustom').classList.toggle('hidden',$('#chScen').value!=='custom');
-function renderChat(){const h=chHist(),L=$('#chLog');
-  L.innerHTML=h.length?h.map((m,i)=>m.role==='ai'?`<div class="msg ai">${clickable(m.text)}<button class="say" data-i="${i}">🔊</button></div>`:
-    `<div class="msg me">${esc(m.text)}</div>${m.fix&&!m.fix.isCorrect&&m.fix.corrected?`<div class="fix">✏️ ${diff(m.text,m.fix.corrected)}<br><b>${esc(m.fix.corrected)}</b>${m.fix.note?`<br>${esc(m.fix.note)}`:''}</div>`:m.fix?.isCorrect?'<div class="fix">✅ 文法正確</div>':''}`).join(''):'<p class="small">選好情境和程度，按「送出」或直接說話開始。</p>';
-  L.querySelectorAll('.say').forEach(b=>b.onclick=()=>say(h[b.dataset.i].text));L.scrollTop=L.scrollHeight;}
-async function chatSend(){const v=$('#chIn').value.trim(),h=chHist();if(!v&&h.length)return;
-  if(v)h.push({role:'user',text:v});$('#chIn').value='';setHist(h);$('#chGo').disabled=true;$('#chLog').insertAdjacentHTML('beforeend','<p class="small" id="chWait">AI 思考中…</p>');
-  const sc=$('#chScen').value;try{const r=await api('/api/chat',{messages:h.map(m=>({role:m.role,text:m.text})),scenario:sc==='custom'?($('#chCustom').value||'casual talk'):sc,level:$('#chLvl').value});
-    if(v&&r.correction)h[h.length-1].fix=r.correction;h.push({role:'ai',text:r.reply});setHist(h);say(r.reply);}
-  catch(e){$('#chWait')?.remove();$('#chLog').insertAdjacentHTML('beforeend',`<p class="err">⚠️ ${esc(e.message)}</p>`)}$('#chGo').disabled=!navigator.onLine&&!cfg().mock;}
-$('#chGo').onclick=chatSend;$('#chIn').onkeydown=e=>{if(e.key==='Enter')chatSend()};
-$('#chNew').onclick=()=>{if(!chHist().length||confirm('清除這次對話紀錄？')){setHist([]);$('#chWord').classList.add('hidden')}};
-async function chWord(w,box='#chWord'){const o=$(box);busy(o,'查詢中…');await loadDict();const d=DICT[w.toLowerCase()];let r=null;
-  try{r=await api('/api/explain',{word:w})}catch{}
-  o.innerHTML=`<div class="row" style="margin:0"><b class="en">${esc(w)}</b><button id="cwSay">🔊</button><button id="cwAdd">＋加入 Notion</button><button id="cwX">✕</button></div>
-   ${r?`<div class="small">${esc(r.ipa)} ${esc(r.pos)}</div><p>${esc(r.zh)}</p><p class="small">${esc(r.definition)}<br>💬 ${esc(r.example)}</p>`:d?`<div class="small">/${esc(d[0])}/</div><p>${esc(d[1])}</p>`:'<p class="small">查不到</p>'}<div id="cwFb" class="small"></div>`;
-  $('#cwSay').onclick=()=>say(w);$('#cwX').onclick=()=>o.classList.add('hidden');
-  $('#cwAdd').onclick=async()=>{const it={word:w.toLowerCase(),meaning:r?.zh||d?.[1]||'',example:r?.example||'',added:new Date().toISOString().slice(0,10)};
-    if(!navigator.onLine){setQueue([...queue(),it]);$('#cwFb').textContent='離線中，已排隊';return;}
-    try{const x=await api('/api/vocab',it,'POST');if(!x.skipped)setVocab([...vocab(),it]);$('#cwFb').innerHTML=`<span class="good">${x.skipped?'已經在單字頁了':'✅ 已加入 Notion'}</span>`}
-    catch(e){setQueue([...queue(),it]);$('#cwFb').innerHTML=`<span class="err">⚠️ ${esc(e.message)}，已排隊</span>`}};}
-renderChat();
-
-// ---------- realtime voice (Gemini Live) ----------
-const V={ws:null,ctx:null,stream:null,node:null,src:null,an:null,playAt:0,sources:[],inT:'',outT:'',raf:0,mockT:[],state:'off'};
-const vHist=()=>JSON.parse(LS.eb_voice||'[]'),setVH=h=>{LS.eb_voice=JSON.stringify(h.slice(-60));renderVoice()};
-['vScen','vLvl'].forEach(id=>{const k='eb_'+id;if(LS[k])$('#'+id).value=LS[k];$('#'+id).onchange=()=>LS[k]=$('#'+id).value;});
-function renderVoice(){const h=vHist(),L=$('#vLog');
-  L.innerHTML=h.map((m,i)=>m.role==='ai'?`<div class="msg ai">${clickable(m.text)}</div>`:`<div class="msg me">${esc(m.text)}</div>${m.fix?(m.fix.isCorrect?'<div class="fix">✅ 文法正確</div>':`<div class="fix">✏️ ${diff(m.text,m.fix.corrected)}<br><b>${esc(m.fix.corrected)}</b><br>${esc(m.fix.explanation||'')}</div>`):''}`).join('');
-  if(V.inT)L.insertAdjacentHTML('beforeend',`<div class="msg me" style="opacity:.6">${esc(V.inT)}</div>`);
-  if(V.outT)L.insertAdjacentHTML('beforeend',`<div class="msg ai" style="opacity:.75">${esc(V.outT)}</div>`);L.scrollTop=L.scrollHeight;}
-function vSet(st,msg){V.state=st;const o=$('#orb');o.className={off:'idle',connecting:'connecting',listen:'listen',ai:'ai'}[st]||'idle';$('#vState').textContent=msg;
-  $('#vStart').classList.toggle('hidden',st!=='off');$('#vEnd').classList.toggle('hidden',st==='off');}
+  let i=0,j=0,o=[];while(i<n||j<m){if(i<n&&j<m&&A[i]===B[j]){o.push(esc(A[i]));i++;j++}else if(j<m&&(i>=n||L[i][j+1]>=L[i+1][j])){o.push(`<ins>${esc(B[j])}</ins>`);j++}else{o.push(`<del>${esc(A[i])}</del>`);i++}}return o.join(' ');}
+const vHist=()=>JSON.parse(LS.eb_voice||'[]'),setVH=h=>{LS.eb_voice=JSON.stringify(h.slice(-60));renderLog()};
+function renderLog(){const L=$('#vLog'),h=vHist().slice(-4);
+  L.innerHTML=h.map(m=>`<div class="msg ${m.role==='ai'?'ai':'me'}">${clickable(m.text)}</div>`).join('')
+   +(V.inT?`<div class="msg me live">${esc(V.inT)}</div>`:'')+(V.outT?`<div class="msg ai live">${clickable(V.outT)}</div>`:'');}
+let fixT=0;function showFix(t,r){const el=$('#fixToast');
+  el.innerHTML=r.isCorrect?'✅ 文法正確':`<span class="dim small">✏️ ${diff(t,r.corrected)}</span><br><b>${esc(r.corrected)}</b><br><span class="small">${esc(r.explanation||'')}</span>`;
+  el.classList.remove('hidden');$('#vLog').classList.add('dim2');clearTimeout(fixT);fixT=setTimeout(()=>{el.classList.add('hidden');$('#vLog').classList.remove('dim2')},r.isCorrect?2500:8000);}
+$('#fixToast').onclick=()=>{$('#fixToast').classList.add('hidden');$('#vLog').classList.remove('dim2')};
+$('#vLog').onclick=e=>{const w=e.target.closest('.w');if(w)wordSheet(w.dataset.w)};
 function commitUser(){const t=V.inT.trim();V.inT='';if(!t)return;const h=vHist();h.push({role:'user',text:t});setVH(h);const idx=h.length-1;
-  api('/api/correct',{text:t}).then(r=>{const h2=vHist();if(h2[idx]&&h2[idx].text===t){h2[idx].fix=r;setVH(h2)}}).catch(()=>{});}
+  api('/api/correct',{text:t}).then(r=>{const h2=vHist();if(h2[idx]?.text===t){h2[idx].fix=r;LS.eb_voice=JSON.stringify(h2.slice(-60))}showFix(t,r)}).catch(e=>console.log('[eb] correct failed',e.message));}
 function commitAI(){const t=V.outT.trim();V.outT='';if(!t)return;const h=vHist();h.push({role:'ai',text:t});setVH(h);}
-function stopPlayback(){V.sources.forEach(s=>{try{s.stop()}catch{}});V.sources=[];V.playAt=0;}
-function playPCM(b64){const bin=atob(b64),n=bin.length>>1,buf=V.ctx.createBuffer(1,n,24000),ch=buf.getChannelData(0);
-  for(let i=0;i<n;i++){let v=bin.charCodeAt(2*i)|(bin.charCodeAt(2*i+1)<<8);if(v>32767)v-=65536;ch[i]=v/32768;}
-  const s=V.ctx.createBufferSource();s.buffer=buf;s.connect(V.outAn);const t=Math.max(V.ctx.currentTime+.03,V.playAt);s.start(t);V.playAt=t+buf.duration;
-  V.sources.push(s);s.onended=()=>{V.sources=V.sources.filter(x=>x!==s);if(!V.sources.length&&V.state==='ai')vSet('listen','聆聽中…請說英文');};}
+const capOn=()=>LS.eb_cap!=='0';function renderCap(){$('#vLog').classList.toggle('hide',!capOn());$('#vCap').classList.toggle('on',capOn())}
+$('#vCap').onclick=()=>{LS.eb_cap=capOn()?'0':'1';renderCap()};
+
+// ---------- realtime voice engine ----------
+const V={on:false,ws:null,ctx:null,stream:null,node:null,src:null,an:null,outAn:null,outGain:null,playAt:0,sources:new Set(),inT:'',outT:'',raf:0,mockT:[],
+  state:'off',muted:false,handle:null,retries:0,greeted:false,wake:null,thinkT:0,gen:0};
+const MSG={off:'點一下開始',connecting:'Connecting…',listen:'Listening…',think:'Thinking…',ai:'Speaking…',reconnect:'重新連線中…（對話會接續）'};
+function vSet(st,msg){V.state=st;$('#vState').textContent=msg||(V.muted&&st==='listen'?'Muted':MSG[st]);
+  const m=$('#vMain');m.classList.toggle('end',st!=='off');m.setAttribute('aria-label',st==='off'?'開始':'結束');
+  $('#vMute').classList.toggle('muted',V.muted);document.body.classList.toggle('idle',st==='off');}
+async function lockWake(){try{if('wakeLock'in navigator&&!document.hidden&&!V.wake){V.wake=await navigator.wakeLock.request('screen');V.wake.addEventListener('release',()=>V.wake=null)}}catch{}}
 const WORKLET=`class P extends AudioWorkletProcessor{constructor(){super();this.r=sampleRate/16000;this.acc=[];this.pos=0}
 process(i){const x=i[0][0];if(!x)return true;for(;this.pos<x.length;this.pos+=this.r)this.acc.push(x[Math.floor(this.pos)]);this.pos-=x.length;
 if(this.acc.length>=1600){const a=new Int16Array(this.acc.length);for(let k=0;k<a.length;k++){const s=Math.max(-1,Math.min(1,this.acc[k]));a[k]=s<0?s*32768:s*32767}this.port.postMessage(a.buffer,[a.buffer]);this.acc=[]}return true}}registerProcessor('pcm16k',P)`;
-function orbLoop(){const o=$('#orb'),d=new Uint8Array(256);const f=()=>{let lv=0;const an=V.state==='ai'?V.outAn:V.an;
-  if(an){an.getByteTimeDomainData(d);let s=0;for(const v of d)s+=(v-128)**2;lv=Math.sqrt(s/d.length)/40;}
-  if(V.state==='listen'||V.state==='ai')o.style.transform=`scale(${1+Math.min(lv*.5,.22)})`;else o.style.transform='';V.raf=requestAnimationFrame(f)};f();}
-async function vStart(){if(V.state!=='off')return;const c=cfg();vSet('connecting','連線中…');
-  try{V.ctx=new (window.AudioContext||window.webkitAudioContext)();await V.ctx.resume();V.outAn=V.ctx.createAnalyser();V.outAn.connect(V.ctx.destination);orbLoop();
-    if(c.mock)return vMock();
-    if(!navigator.mediaDevices?.getUserMedia)throw new Error('這個瀏覽器不支援麥克風串流');
-    const [tok,stream]=await Promise.all([api('/api/live-token',{scenario:$('#vScen').value,level:$('#vLvl').value}),navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1}})]);
-    V.stream=stream;await V.ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET],{type:'application/javascript'})));
-    V.src=V.ctx.createMediaStreamSource(stream);V.an=V.ctx.createAnalyser();V.src.connect(V.an);V.node=new AudioWorkletNode(V.ctx,'pcm16k');V.src.connect(V.node);
-    const ws=V.ws=new WebSocket('wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContentConstrained?access_token='+encodeURIComponent(tok.token));
-    ws.onopen=()=>ws.send(JSON.stringify({setup:{model:'models/'+tok.model}}));
-    ws.onmessage=async e=>{const m=JSON.parse(typeof e.data==='string'?e.data:await e.data.text());
-      if(m.setupComplete){vSet('listen','聆聽中…請說英文');ws.send(JSON.stringify({realtimeInput:{text:'(Lee just joined the call. Greet Lee in character and ask your first question.)'}}));
-        V.node.port.onmessage=ev=>{if(ws.readyState===1){const u=new Uint8Array(ev.data);let b='';for(let i=0;i<u.length;i+=8192)b+=String.fromCharCode.apply(null,u.subarray(i,i+8192));ws.send(JSON.stringify({realtimeInput:{audio:{data:btoa(b),mimeType:'audio/pcm;rate=16000'}}}))}};}
-      const sc=m.serverContent;if(!sc)return;
-      if(sc.inputTranscription?.text){V.inT+=sc.inputTranscription.text;renderVoice();}
-      if(sc.interrupted){stopPlayback();commitAI();vSet('listen','聆聽中…');}
-      if(sc.modelTurn?.parts)for(const p of sc.modelTurn.parts)if(p.inlineData?.data){if(V.inT)commitUser();if(V.state!=='ai')vSet('ai','AI 說話中…（可直接插話）');playPCM(p.inlineData.data);}
-      if(sc.outputTranscription?.text){if(V.inT)commitUser();V.outT+=sc.outputTranscription.text;renderVoice();}
-      if(sc.turnComplete){commitUser();commitAI();}};
-    ws.onclose=e=>{if(V.state!=='off'){vEnd();$('#vState').textContent=e.code===1000?'已結束':`連線中斷（${e.code}${e.reason?'：'+e.reason.slice(0,80):''}）`;}};
-    ws.onerror=()=>{};
-  }catch(e){vEnd();$('#vState').textContent='⚠️ '+e.message;}}
-function vEnd(){const ws=V.ws;V.ws=null;if(ws&&ws.readyState<2)ws.close(1000);V.mockT.forEach(clearTimeout);V.mockT=[];stopPlayback();commitUser();commitAI();
-  V.stream?.getTracks().forEach(t=>t.stop());V.stream=null;cancelAnimationFrame(V.raf);V.ctx?.close().catch(()=>{});V.ctx=null;V.an=null;vSet('off','點一下開始');}
+async function ensureAudio(){if(!V.ctx){V.ctx=new (window.AudioContext||window.webkitAudioContext)();V.outGain=V.ctx.createGain();V.outAn=V.ctx.createAnalyser();V.outAn.fftSize=512;V.outGain.connect(V.outAn);V.outAn.connect(V.ctx.destination);V.workletP=null;}
+  await V.ctx.resume();}
+async function ensureMic(){if(V.stream&&V.stream.getAudioTracks().some(t=>t.readyState==='live'))return;
+  if(!navigator.mediaDevices?.getUserMedia)throw new Error('這個瀏覽器不支援麥克風（iPhone/iPad 請用 Safari 並確認是 https 網址）');
+  try{V.stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:true,autoGainControl:true,channelCount:1}})}
+  catch(e){throw new Error(e.name==='NotAllowedError'?'麥克風權限被拒絕。請到 設定 → Safari → 麥克風（或網址列左邊「大小」→ 網站設定）改成「允許」，再重新整理。':e.name==='NotFoundError'?'找不到麥克風':'麥克風無法開啟：'+e.message)}
+  V.workletP=V.workletP||V.ctx.audioWorklet.addModule(URL.createObjectURL(new Blob([WORKLET],{type:'application/javascript'})));await V.workletP;
+  V.src?.disconnect();V.src=V.ctx.createMediaStreamSource(V.stream);V.an=V.ctx.createAnalyser();V.an.fftSize=512;V.src.connect(V.an);
+  V.node=new AudioWorkletNode(V.ctx,'pcm16k');V.src.connect(V.node);V.node.port.onmessage=ev=>sendAudio(ev.data);}
+function sendAudio(buf){const ws=V.ws;if(!ws||ws.readyState!==1||!V.ready||V.muted)return;const u=new Uint8Array(buf);let b='';for(let i=0;i<u.length;i+=8192)b+=String.fromCharCode.apply(null,u.subarray(i,i+8192));
+  ws.send(JSON.stringify({realtimeInput:{audio:{data:btoa(b),mimeType:'audio/pcm;rate=16000'}}}));}
+function flushPlayback(){V.sources.forEach(s=>{try{s.onended=null;s.stop()}catch{}});V.sources.clear();V.playAt=0;
+  if(V.outGain){V.outGain.gain.cancelScheduledValues(0);V.outGain.gain.value=1;}}
+function playPCM(b64){const bin=atob(b64),n=bin.length>>1,buf=V.ctx.createBuffer(1,n,24000),ch=buf.getChannelData(0);
+  for(let i=0;i<n;i++){let v=bin.charCodeAt(2*i)|(bin.charCodeAt(2*i+1)<<8);if(v>32767)v-=65536;ch[i]=v/32768;}
+  const s=V.ctx.createBufferSource();s.buffer=buf;s.connect(V.outGain);const now=V.ctx.currentTime;
+  const t=V.playAt<now+.02?now+.08:V.playAt; // small jitter buffer at start, then gapless back-to-back
+  s.start(t);V.playAt=t+buf.duration;V.sources.add(s);
+  s.onended=()=>{V.sources.delete(s);if(!V.sources.size&&V.state==='ai')vSet('listen');};}
+// ---- canvas orb: soft glowing fluid sphere ----
+const ORB={lv:0,e:0,t:0,last:0};
+function orbLoop(){cancelAnimationFrame(V.raf);const cv=$('#orb'),g=cv.getContext('2d'),d=new Uint8Array(512);
+  const f=now=>{const dt=Math.min(.05,(now-(ORB.last||now))/1000);ORB.last=now;const dpr=Math.min(2,devicePixelRatio||1),W=cv.clientWidth,H=cv.clientHeight;
+    if(cv.width!==Math.round(W*dpr)||cv.height!==Math.round(H*dpr)){cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr)}
+    let lv=0;const st=V.state,an=st==='ai'?V.outAn:(st==='listen'&&!V.muted?V.an:null);
+    if(an){an.getByteTimeDomainData(d);let q=0;for(const v of d)q+=(v-128)**2;lv=Math.min(1,Math.sqrt(q/d.length)/(st==='ai'?22:30));}
+    ORB.lv+=(lv-ORB.lv)*(lv>ORB.lv?.35:.08);
+    const base={off:.0,connecting:.15,reconnect:.15,listen:.12,think:.3,ai:.35}[st]??0;ORB.e+=(base+ORB.lv*(st==='ai'?1.4:1)-ORB.e)*.08;
+    ORB.t+=dt*(0.35+ORB.e*2.2);const t=ORB.t,e=ORB.e;
+    g.setTransform(dpr,0,0,dpr,0,0);g.clearRect(0,0,W,H);
+    const cx=W/2,cy=H/2,R0=Math.min(W*.24,H*.19)*(1+(st==='off'?Math.sin(now/1300)*.025:0)+ORB.lv*.12)*(st==='connecting'||st==='reconnect'?1+Math.sin(now/260)*.03:1);
+    const glow=g.createRadialGradient(cx,cy,R0*.6,cx,cy,R0*2.4);glow.addColorStop(0,`rgba(200,205,215,${.14+e*.18})`);glow.addColorStop(1,'rgba(0,0,0,0)');g.fillStyle=glow;g.fillRect(0,0,W,H);
+    const blob=(r,amp,ph,fill)=>{g.beginPath();const N=120;for(let i=0;i<=N;i++){const a=i/N*Math.PI*2;
+      const k=1+amp*(Math.sin(3*a+t*1.3+ph)*.5+Math.sin(5*a-t*1.7+ph*2)*.3+Math.sin(2*a+t*.9-ph)*.6+Math.sin(7*a+t*2.3)*.15*e);
+      const x=cx+Math.cos(a)*r*k,y=cy+Math.sin(a)*r*k;i?g.lineTo(x,y):g.moveTo(x,y)}g.closePath();g.fillStyle=fill;g.fill();};
+    const amp=.012+Math.min(e,.9)*.045;
+    const gr=(x,y,r,c0,c1,c2)=>{const q=g.createRadialGradient(x,y,0,cx,cy,r);q.addColorStop(0,c0);q.addColorStop(.55,c1);q.addColorStop(1,c2);return q};
+    blob(R0*1.04,amp*1.3,1.7,gr(cx,cy,R0*1.1,'rgba(150,155,165,.0)','rgba(120,125,135,.18)','rgba(90,95,105,.05)'));
+    blob(R0,amp,0,gr(cx-R0*.28,cy-R0*.32,R0*1.05,'#ffffff','#c9ccd2','#4a4d55'));
+    g.globalCompositeOperation='lighter';
+    blob(R0*.62,amp*1.8,3.1,gr(cx+Math.sin(t*.7)*R0*.2,cy+Math.cos(t*.6)*R0*.2,R0*.7,`rgba(255,255,255,${.22+e*.25})`,'rgba(220,225,235,.06)','rgba(0,0,0,0)'));
+    g.globalCompositeOperation='source-over';
+    V.raf=requestAnimationFrame(f)};V.raf=requestAnimationFrame(f);}
+async function getToken(handle){const key=[pref('scen'),pref('lvl'),pref('voice'),pref('speed')].join('|');
+  if(!handle&&W.tok&&W.tokKey===key&&Date.now()-W.tokAt<45e3){const t=W.tok;W.tok=null;return t}W.tok=null;
+  return api('/api/live-token',{scenario:pref('scen'),level:pref('lvl'),voice:pref('voice'),speed:pref('speed'),...(handle?{handle}:{})});}
+async function prefetchToken(){const c=cfg();if(c.mock||V.on||!c.code||W.state!=='ready'||document.hidden)return;
+  try{const key=[pref('scen'),pref('lvl'),pref('voice'),pref('speed')].join('|');const t=await getToken();W.tok=t;W.tokAt=Date.now();W.tokKey=key;}catch{}}
+$('#vMain').addEventListener('pointerdown',()=>{if(V.state==='off'&&!W.tok)prefetchToken()});
+
+async function vStart(){if(V.on)return;V.on=true;V.handle=null;V.retries=0;V.greeted=false;V.muted=false;closeSheet();
+  vSet('connecting');lockWake();
+  try{await ensureAudio();orbLoop();if(cfg().mock)return vMock();
+    if(!navigator.onLine)throw new Error('目前離線，語音對話需要網路');
+    if(W.state!=='ready'){vSet('connecting','喚醒伺服器中…（免費主機閒置後約需 30–60 秒）');if(!(await warm()))throw new Error('伺服器沒有回應，請稍後再試');}
+    vSet('connecting');await Promise.all([ensureMic(),connect()]);
+  }catch(e){fail(e)}}
+function fail(e){const msg='⚠️ '+(e.message||e);vEnd();$('#vState').textContent=msg;}
+async function connect(){const gen=++V.gen;V.ready=false;let tok;
+  tok=await getToken(V.handle);if(gen!==V.gen||!V.on)return;
+  const ws=V.ws=new WebSocket(WSS+encodeURIComponent(tok.token));
+  ws.onopen=()=>ws.send(JSON.stringify({setup:{model:'models/'+tok.model}}));
+  ws.onmessage=async e=>{if(ws!==V.ws)return;const m=JSON.parse(typeof e.data==='string'?e.data:await e.data.text());
+    if(m.setupComplete){V.ready=true;V.retries=0;if(V.state!=='ai')vSet('listen');
+      if(!V.greeted){V.greeted=true;ws.send(JSON.stringify({realtimeInput:{text:'(Lee just joined the call. Greet Lee in character and ask your first question.)'}}));}}
+    if(m.sessionResumptionUpdate?.resumable&&m.sessionResumptionUpdate.newHandle)V.handle=m.sessionResumptionUpdate.newHandle;
+    if(m.goAway){reconnect('goAway');return}
+    const sc=m.serverContent;if(!sc)return;
+    if(sc.inputTranscription?.text){V.inT+=sc.inputTranscription.text;renderLog();if(V.state==='listen'){clearTimeout(V.thinkT);V.thinkT=setTimeout(()=>{if(V.state==='listen'&&V.inT)vSet('think')},900)}}
+    if(sc.interrupted){flushPlayback();commitAI();vSet('listen');}
+    if(sc.modelTurn?.parts)for(const p of sc.modelTurn.parts)if(p.inlineData?.data){clearTimeout(V.thinkT);if(V.inT)commitUser();if(V.state!=='ai')vSet('ai');playPCM(p.inlineData.data);}
+    if(sc.outputTranscription?.text){if(V.inT)commitUser();V.outT+=sc.outputTranscription.text;renderLog();}
+    if(sc.turnComplete){commitUser();commitAI();if(!V.sources.size&&V.state!=='listen')vSet('listen');}};
+  ws.onclose=e=>{if(ws!==V.ws||!V.on)return;reconnect('close '+e.code+(e.reason?' '+e.reason.slice(0,60):''));};
+  ws.onerror=()=>{};}
+async function reconnect(why){if(!V.on)return;const old=V.ws;V.ws=null;V.ready=false;try{old&&old.readyState<2&&old.close(1000)}catch{}
+  console.log('[eb] reconnect:',why);flushPlayback();commitUser();commitAI();
+  if(V.retries>=6)return fail(new Error('連線一直中斷，請檢查網路後再開始'));
+  const wait=V.handle?Math.min(8000,1500*2**V.retries):V.retries?Math.min(8000,600*2**V.retries):0; // server needs ~1s to release a resumable sessionV.retries++;vSet('reconnect');
+  if(!navigator.onLine){vSet('reconnect','網路斷線，恢復後會自動接續…');await new Promise(r=>addEventListener('online',r,{once:true}));if(!V.on)return;}
+  await sleep(wait);if(!V.on)return;
+  try{await connect()}catch(e){if(e.status===401)return fail(e);if(V.handle&&/handle|resum/i.test(e.message))V.handle=null;reconnect('token: '+e.message)}}
+function vEnd(){V.on=false;V.gen++;const ws=V.ws;V.ws=null;V.ready=false;if(ws&&ws.readyState<2)ws.close(1000);V.mockT.forEach(clearTimeout);V.mockT=[];clearTimeout(V.thinkT);
+  flushPlayback();commitUser();commitAI();V.stream?.getTracks().forEach(t=>t.stop());V.stream=null;V.src?.disconnect();V.node?.disconnect();V.src=V.node=V.an=null;
+  V.ctx?.suspend().catch(()=>{});V.wake?.release().catch(()=>{});V.wake=null;vSet('off');setTimeout(prefetchToken,1000);}
 function vMock(){vSet('listen','（示範模式）聆聽中…');const T=(ms,f)=>V.mockT.push(setTimeout(f,ms));
-  const tone=()=>{const o=V.ctx.createOscillator(),g=V.ctx.createGain();o.frequency.value=220;g.gain.value=.04;o.connect(g).connect(V.outAn);o.start();o.stop(V.ctx.currentTime+1.6);};
-  const ai=(t,ms)=>{T(ms,()=>{vSet('ai','AI 說話中…（示範）');tone();V.outT=t;renderVoice();});T(ms+1800,()=>{commitAI();vSet('listen','（示範模式）聆聽中…');});};
+  const tone=()=>{const o=V.ctx.createOscillator(),g=V.ctx.createGain();o.frequency.value=220;g.gain.value=.05;o.connect(g).connect(V.outGain);o.start();o.stop(V.ctx.currentTime+1.6);};
+  const ai=(t,ms)=>{T(ms,()=>{vSet('ai');tone();V.outT=t;renderLog();});T(ms+1800,()=>{commitAI();vSet('listen','（示範模式）聆聽中…');});};
   ai('Hi Lee! Welcome to Sunny Cafe. What would you like to order today?',600);
-  T(3200,()=>{V.inT='I wants a hamburger and two coffee.';renderVoice();});T(4400,()=>commitUser());
+  T(3200,()=>{V.inT='I wants a hamburger and two coffee.';renderLog();vSet('think');});T(4300,()=>commitUser());
   ai('Great choice! Would you like fries with your hamburger?',4700);}
-$('#vStart').onclick=vStart;$('#orb').onclick=()=>V.state==='off'&&vStart();$('#vEnd').onclick=vEnd;
-$('#vClear').onclick=()=>{if(confirm('清除語音對話紀錄？'))setVH([])};renderVoice();vSet('off','點一下開始');
+$('#vMain').onclick=()=>V.state==='off'?vStart():vEnd();$('#orb').onclick=()=>V.state==='off'&&vStart();
+$('#vMute').onclick=()=>{if(V.state==='off')return;V.muted=!V.muted;
+  if(V.muted&&V.ws?.readyState===1&&V.ready)V.ws.send(JSON.stringify({realtimeInput:{audioStreamEnd:true}}));if(V.state==='listen')vSet('listen');};
+window.__eb={V,forceDrop:()=>V.ws?.close(4000,'test drop'),goAway:()=>reconnect('test goAway')};
 
 // ---------- settings ----------
+$('#sVoice').innerHTML=Object.entries(VOICES).map(([v,l])=>`<option value="${v}">${l}</option>`).join('');
+[['sScen','scen'],['sLvl','lvl'],['sVoice','voice'],['sSpeed','speed']].forEach(([id,k])=>$('#'+id).onchange=()=>{LS['eb_'+k]=$('#'+id).value;W.tok=null;syncPrefs()});
+$('#vClear').onclick=()=>{if(confirm('清除語音對話紀錄？'))setVH([])};
 $('#sUrl').value=LS.eb_url||DEFAULT_URL;$('#sCode').value=LS.eb_code||'';$('#sMock').checked=cfg().mock;
-$('#sSave').onclick=()=>{LS.eb_url=$('#sUrl').value.trim();LS.eb_code=$('#sCode').value.trim();const nc=$('#sCode').value.trim();if(nc&&LS.eb_url&&$('#sMock').checked&&!LS.eb_codeSaved){$('#sMock').checked=false;}LS.eb_codeSaved=nc?'1':'';LS.eb_mock=$('#sMock').checked?'1':'0';renderStatus();$('#sOut').textContent='已儲存';};
-$('#sTest').onclick=async()=>{$('#sSave').click();const c=cfg();if(c.mock)return $('#sOut').textContent='示範模式不需要連線';
-  try{const h=await (await fetch(c.url+'/health')).json();await api('/api/vocab');$('#sOut').innerHTML=`<span class="good">✅ 連線成功（AI：${esc(h.ai||'未設定')}，Notion：${h.notion?'已設定':'未設定'}）</span>`}
-  catch(e){$('#sOut').innerHTML=`<span class="err">⚠️ ${esc(e.message)}（免費後台閒置後第一次要等約 1 分鐘喚醒）</span>`}};
+$('#sSave').onclick=()=>{LS.eb_url=$('#sUrl').value.trim();const nc=$('#sCode').value.trim();LS.eb_code=nc;if(nc&&$('#sMock').checked&&!LS.eb_codeSaved)$('#sMock').checked=false;LS.eb_codeSaved=nc?'1':'';
+  LS.eb_mock=$('#sMock').checked?'1':'0';W.state='idle';W.tok=null;renderStatus();warm();$('#sOut').textContent='已儲存';};
+$('#sTest').onclick=async()=>{$('#sSave').click();const c=cfg();if(c.mock)return $('#sOut').textContent='示範模式不需要連線';$('#sOut').textContent='測試中…（伺服器休眠時約需 1 分鐘）';
+  try{if(!(await warm()))throw new Error('伺服器沒有回應');const h=await (await fetch(c.url+'/health')).json();await api('/api/correct',{text:'I am fine.'});$('#sOut').innerHTML=`<span class="good">✅ 連線成功（AI：${esc(h.ai||'未設定')}，Notion：${h.notion?'已設定':'未設定'}）</span>`}
+  catch(e){$('#sOut').innerHTML=`<span class="err">⚠️ ${esc(e.message)}</span>`}};
 
-renderStatus();renderCount();if(!LS.eb_vocab&&cfg().mock)sync();
+const go=t=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.id===t));$('#scenBtn').classList.toggle('hidden',t!=='voice')};
+$('#vSet').onclick=()=>go('settings');$('#sBack').onclick=()=>go('voice');
+syncPrefs();renderCap();orbLoop();renderLog();vSet('off');renderStatus();warm();flushQueue();
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');

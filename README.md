@@ -2,7 +2,7 @@
 
 Live: https://leeryan1999.github.io/english-buddy/
 
-PWA for Chinese→English translation (with TTS), grammar correction, word lookup (offline dictionary of 5,000 common words from [ECDICT](https://github.com/skywind3000/ECDICT), MIT licence), and Notion vocabulary quizzes. With no backend configured it runs in **demo mode**, using mock data.
+Voice-first PWA for real-time English conversation practice (Gemini Live): live captions, a zh-TW grammar card for each thing you say, tap any word to explain it or add it to a Notion vocabulary page. Two screens only: 語音 (voice) and 設定 (settings). With no backend configured it runs in **demo mode**, using mock data.
 
 ## Backend (`server/`)
 A small Express proxy that keeps the API keys secret. It has `/api/translate`, `/api/correct`, `/api/explain`, `/api/quizcheck`, `/api/chat`, `/api/live-token` (mints single-use Gemini Live ephemeral tokens locked to model + system instruction; `LIVE_MODEL`, default `gemini-3.8-live`), `GET/POST /api/vocab` and `/health`.
