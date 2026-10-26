@@ -78,7 +78,7 @@ app.post('/api/correct', wrap(req => askJSON(
 app.post('/api/zh', wrap(req => askJSON(
   `Translate this English sentence directly and literally into Traditional Chinese using Taiwan vocabulary (台灣用語, never mainland phrasing). Output ONLY the translation itself: no commentary, no notes, no questions, no replies, no opinions. Return JSON {"zh": string}.\nText: ${txt(req.body.text)}`)));
 app.post('/api/explain', wrap(req => askJSON(
-  `Explain the English word or phrase for a Taiwanese learner. If the input is Chinese, first pick the most common English word/phrase for it and explain that (put it in "word"). Return JSON {"word": string, "ipa": string, "pos": string, "definition": string (simple English), "zh": string (Traditional Chinese meaning), "example": string, "exampleZh": string}.\nWord: ${txt(req.body.word).slice(0, 80)}`)));
+  `Explain the English word or phrase for a Taiwanese learner. If the input is Chinese, first pick the most common English word/phrase for it and explain that (put it in "word"). Return JSON {"word": string, "ipa": string, "pos": string, "definition": string (simple English), "zh": string (concise Traditional Chinese meaning using Taiwan vocabulary only (台灣用語), never mainland terms like 自行車/視頻/軟件), "example": string, "exampleZh": string}.\nWord: ${txt(req.body.word).slice(0, 80)}`)));
 app.post('/api/quizcheck', wrap(req => askJSON(
   `A learner was asked what the English word "${txt(req.body.word).slice(0,80)}" means (reference meaning: ${txt(req.body.meaning).slice(0,200)}). Their answer: "${txt(req.body.answer).slice(0,300)}". Answers may be in English or Chinese. Return JSON {"correct": boolean, "feedback": string (short, Traditional Chinese, encouraging)}.`)));
 
