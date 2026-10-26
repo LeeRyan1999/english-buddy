@@ -42,16 +42,16 @@ function provider() { return AI_PROVIDER || (GEMINI_API_KEY ? 'gemini' : OPENAI_
 async function askJSON(prompt) {
   const p = provider();
   if (p === 'gemini') {
-    const models = [GEMINI_MODEL, ...(process.env.GEMINI_FALLBACKS || 'gemini-flash-lite-latest,gemini-flash-latest').split(',')].filter((m, i, a) => m && a.indexOf(m) === i);
+    const models = [GEMINI_MODEL, ...(process.env.GEMINI_FALLBACKS || 'gemini-3.1-flash-lite,gemini-2.5-flash-lite,gemma-4-26b-a4b-it,gemini-flash-latest').split(',')].filter((m, i, a) => m && a.indexOf(m) === i);
     let last;
     for (const m of models) {
       let r; try { r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${m}:generateContent`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY },
-        signal: AbortSignal.timeout(20000), body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }], generationConfig: { responseMimeType: 'application/json', temperature: 0.3 } })
+        signal: AbortSignal.timeout(15000), body: JSON.stringify({ contents: [{ parts: [{ text: m.startsWith('gemma') ? prompt + '\nReply with only the JSON object.' : prompt }] }], generationConfig: m.startsWith('gemma') ? { temperature: 0.3 } : { responseMimeType: 'application/json', temperature: 0.3 } })
       });
       } catch (e) { last = new Error('Gemini timeout (' + m + ')'); continue; }
       const j = await r.json().catch(() => ({}));
-      if (r.ok) return JSON.parse(j.candidates?.[0]?.content?.parts?.filter(x => !x.thought).map(x => x.text).join('') || '{}');
+      if (r.ok) { const t = j.candidates?.[0]?.content?.parts?.filter(x => !x.thought).map(x => x.text).join('') || '{}'; try { return JSON.parse(t); } catch { const mm = t.match(/\{[\s\S]*\}/); if (mm) try { return JSON.parse(mm[0]); } catch {} last = new Error('bad JSON (' + m + ')'); continue; } }
       last = new Error(j.error?.message || 'Gemini error ' + r.status);
       if (![429, 500, 503, 404, 400].includes(r.status)) break;
     }
