@@ -76,7 +76,7 @@ app.post('/api/translate', wrap(req => askJSON(
 app.post('/api/correct', wrap(req => askJSON(
   `You are an English teacher for a Taiwanese learner. Correct the grammar of the sentence (keep meaning; if already correct, return it unchanged). Return JSON {"corrected": string, "isCorrect": boolean, "explanation": string (short Traditional Chinese explanation of each fix, 1-3 sentences)${req.body.zh ? ', "zh": string (natural Traditional Chinese (Taiwan) translation of the corrected sentence)' : ''}}.\nSentence: ${txt(req.body.text)}`)));
 app.post('/api/zh', wrap(req => askJSON(
-  `Translate this English sentence directly and literally into Traditional Chinese (Taiwan). Output ONLY the translation itself: no commentary, no notes, no questions, no replies, no opinions. Return JSON {"zh": string}.\nText: ${txt(req.body.text)}`)));
+  `Translate this English sentence directly and literally into Traditional Chinese using Taiwan vocabulary (台灣用語, never mainland phrasing). Output ONLY the translation itself: no commentary, no notes, no questions, no replies, no opinions. Return JSON {"zh": string}.\nText: ${txt(req.body.text)}`)));
 app.post('/api/explain', wrap(req => askJSON(
   `Explain the English word or phrase for a Taiwanese learner. If the input is Chinese, first pick the most common English word/phrase for it and explain that (put it in "word"). Return JSON {"word": string, "ipa": string, "pos": string, "definition": string (simple English), "zh": string (Traditional Chinese meaning), "example": string, "exampleZh": string}.\nWord: ${txt(req.body.word).slice(0, 80)}`)));
 app.post('/api/quizcheck', wrap(req => askJSON(
@@ -98,7 +98,7 @@ Conversation so far:\n${msgs || '(none)'}`);
 
 // ---- Gemini Live: mint single-use ephemeral tokens locked to model + config ----
 const LIVE_MODEL = process.env.LIVE_MODEL || 'gemini-3.8-live';
-app.post('/api/live-token', wrap(async req => {
+const liveToken = async req => {
   if (!GEMINI_API_KEY) throw new Error('GEMINI_API_KEY not set');
   const scen = SCEN[req.body.scenario] || txt(req.body.scenario).slice(0, 200) || SCEN.chat;
   const lvl = LEVELS[req.body.level] || LEVELS.intermediate;
@@ -106,20 +106,29 @@ app.post('/api/live-token', wrap(async req => {
   const voice = VOICES.includes(req.body.voice) ? req.body.voice : 'Puck';
   const slow = req.body.speed === 'slow';
   const handle = typeof req.body.handle === 'string' && /^[\w\-.:/+=]{1,4096}$/.test(req.body.handle) ? req.body.handle : null;
-  const sys = `You are a warm, encouraging English conversation partner for a Taiwanese learner named Lee. Speak ONLY English. Role-play scenario: ${scen}. ${lvl} ${slow ? 'Speak SLOWLY and clearly, with short pauses between phrases and simple words.' : 'Speak at a natural, relaxed pace.'} Keep every reply short: 1-3 sentences, then ALWAYS end with a question to keep the conversation going. Do not lecture about grammar (corrections are shown separately); if Lee seems stuck, gently rephrase your question more simply. When the conversation starts, greet Lee in character. If the session is resumed, continue naturally without greeting again.`;
+  const plain = !!req.body.plain;
+  const sys = `You're Lee's friendly English conversation partner on a voice call. Lee is a Taiwanese learner. Role-play: ${scen}. ${lvl}
+Speak English. ${slow ? 'Speak slowly and clearly with simple words.' : 'Speak at a natural, relaxed pace.'}
+Sound like a real person: use contractions, warm varied intonation, an occasional light filler ("oh", "hmm", "yeah") but sparingly. Never speak in lists or bullet-like structure.
+Keep turns short: usually 1-2 sentences, then one simple follow-up question.
+Understanding Lee: he has a non-native accent and makes mistakes. Be tolerant, infer what he most likely meant from context and respond to that meaning. Don't correct grammar (corrections are shown separately). If you truly can't tell what he meant, briefly confirm ("Did you mean ...?") instead of guessing wildly. If Lee mixes Chinese and English, understand both and reply in English, maybe giving the English for the Chinese word he used.
+If you ever need to say anything in Chinese, use Taiwan Mandarin with a Taiwanese accent and Taiwan vocabulary (台灣用語, Traditional Chinese), never mainland China phrasing.
+Greet Lee in character at the start; if the session is resumed, just continue without greeting again.`;
   const now = Date.now();
   const r = await fetch('https://generativelanguage.googleapis.com/v1alpha/auth_tokens', {
     method: 'POST', headers: { 'Content-Type': 'application/json', 'x-goog-api-key': GEMINI_API_KEY },
     body: JSON.stringify({ uses: 1, expireTime: new Date(now + 30 * 60e3).toISOString(), newSessionExpireTime: new Date(now + 60e3).toISOString(),
-      bidiGenerateContentSetup: { model: 'models/' + LIVE_MODEL, generationConfig: { responseModalities: ['AUDIO'], speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } },
+      bidiGenerateContentSetup: { model: 'models/' + LIVE_MODEL, generationConfig: { responseModalities: ['AUDIO'], ...(plain ? {} : { enableAffectiveDialog: true }), speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: voice } } } },
         systemInstruction: { parts: [{ text: sys }] }, inputAudioTranscription: {}, outputAudioTranscription: {},
-        sessionResumption: handle ? { handle } : {}, contextWindowCompression: { slidingWindow: {} },
-        realtimeInputConfig: { automaticActivityDetection: { startOfSpeechSensitivity: 'START_SENSITIVITY_LOW', endOfSpeechSensitivity: 'END_SENSITIVITY_LOW', prefixPaddingMs: 200, silenceDurationMs: 800 } } } })
+        ...(plain ? {} : { proactivity: { proactiveAudio: true } }), sessionResumption: handle ? { handle } : {}, contextWindowCompression: { slidingWindow: {} },
+        realtimeInputConfig: { automaticActivityDetection: { startOfSpeechSensitivity: 'START_SENSITIVITY_LOW', endOfSpeechSensitivity: 'END_SENSITIVITY_LOW', prefixPaddingMs: 300, silenceDurationMs: 650 } } } })
   });
   const j = await r.json();
+  if (!r.ok && !plain && /affective|proactiv|unknown name|invalid json payload/i.test(j.error?.message || '')) return liveToken({ ...req, body: { ...req.body, plain: true } });
   if (!r.ok) throw new Error('auth_tokens: ' + (j.error?.message || r.status));
-  return { token: j.name, model: LIVE_MODEL, voice, resumed: !!handle, expiresInSec: 1800, startWithinSec: 60 };
-}));
+  return { token: j.name, model: LIVE_MODEL, voice, plain, resumed: !!handle, expiresInSec: 1800, startWithinSec: 60 };
+};
+app.post('/api/live-token', wrap(liveToken));
 
 // ---- Notion ----
 const NV = { Authorization: `Bearer ${NOTION_TOKEN}`, 'Notion-Version': '2022-06-28', 'Content-Type': 'application/json' };

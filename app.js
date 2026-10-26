@@ -121,7 +121,7 @@ function flushPlayback(){V.sources.forEach(s=>{try{s.onended=null;s.stop()}catch
 function playPCM(b64){const bin=atob(b64),n=bin.length>>1,buf=V.ctx.createBuffer(1,n,24000),ch=buf.getChannelData(0);
   for(let i=0;i<n;i++){let v=bin.charCodeAt(2*i)|(bin.charCodeAt(2*i+1)<<8);if(v>32767)v-=65536;ch[i]=v/32768;}
   const s=V.ctx.createBufferSource();s.buffer=buf;s.connect(V.outGain);const now=V.ctx.currentTime;
-  const t=V.playAt<now+.02?now+.08:V.playAt; // small jitter buffer at start, then gapless back-to-back
+  const t=V.playAt<now+.02?now+.04:V.playAt; // small jitter buffer at start, then gapless back-to-back
   s.start(t);V.playAt=t+buf.duration;V.sources.add(s);
   s.onended=()=>{V.sources.delete(s);if(!V.sources.size&&V.state==='ai')vSet('listen');};}
 // ---- canvas orb: soft glowing fluid sphere ----
@@ -150,7 +150,7 @@ function orbLoop(){cancelAnimationFrame(V.raf);const cv=$('#orb'),g=cv.getContex
     V.raf=requestAnimationFrame(f)};V.raf=requestAnimationFrame(f);}
 async function getToken(handle){const key=[pref('scen'),pref('lvl'),pref('voice'),pref('speed')].join('|');
   if(!handle&&W.tok&&W.tokKey===key&&Date.now()-W.tokAt<45e3){const t=W.tok;W.tok=null;return t}W.tok=null;
-  return api('/api/live-token',{scenario:pref('scen'),level:pref('lvl'),voice:pref('voice'),speed:pref('speed'),...(handle?{handle}:{})});}
+  return api('/api/live-token',{scenario:pref('scen'),level:pref('lvl'),voice:pref('voice'),speed:pref('speed'),...(V.plain?{plain:true}:{}),...(handle?{handle}:{})});}
 async function prefetchToken(){const c=cfg();if(c.mock||V.on||!c.code||W.state!=='ready'||document.hidden)return;
   try{const key=[pref('scen'),pref('lvl'),pref('voice'),pref('speed')].join('|');const t=await getToken();W.tok=t;W.tokAt=Date.now();W.tokKey=key;}catch{}}
 $('#vMain').addEventListener('pointerdown',()=>{if(V.state==='off'&&!W.tok)prefetchToken()});
@@ -178,7 +178,7 @@ async function connect(){const gen=++V.gen;V.ready=false;let tok;
     if(sc.modelTurn?.parts)for(const p of sc.modelTurn.parts)if(p.inlineData?.data){clearTimeout(V.thinkT);if(V.inT)commitUser();if(V.state!=='ai')vSet('ai');playPCM(p.inlineData.data);}
     if(sc.outputTranscription?.text){if(V.inT)commitUser();V.outT+=sc.outputTranscription.text;renderLog();}
     if(sc.turnComplete){commitUser();commitAI();if(!V.sources.size&&V.state!=='listen')vSet('listen');}};
-  ws.onclose=e=>{if(ws!==V.ws||!V.on)return;reconnect('close '+e.code+(e.reason?' '+e.reason.slice(0,60):''));};
+  ws.onclose=e=>{if(ws!==V.ws||!V.on)return;if(!V.ready&&!V.plain&&/affective|proactiv|unknown|invalid/i.test(e.reason||'')){V.plain=true;W.tok=null;}reconnect('close '+e.code+(e.reason?' '+e.reason.slice(0,60):''));};
   ws.onerror=()=>{};}
 async function reconnect(why){if(!V.on)return;const old=V.ws;V.ws=null;V.ready=false;try{old&&old.readyState<2&&old.close(1000)}catch{}
   console.log('[eb] reconnect:',why);flushPlayback();commitUser();commitAI();
