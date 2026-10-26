@@ -40,8 +40,9 @@ async function api(path,body,method){const c=cfg();
   const j=await r.json().catch(()=>({error:'後台回應錯誤 '+r.status}));if(!r.ok){const e=new Error(r.status===401?'存取碼錯誤，請到「設定」確認':j.error||r.status);e.status=r.status;throw e}return j;}
 async function mock(path,b){await sleep(250);
   if(path==='/api/correct'){let s=b.text;[[/\bI wants\b/g,'I want'],[/\btwo coffee\b/g,'two coffees'],[/\bI go\b/g,'I went']].forEach(([a,c])=>s=s.replace(a,c));
-    return{corrected:s,isCorrect:s===b.text,explanation:s===b.text?'這句沒有問題！':'主詞 I 的動詞不加 s（wants→want）；可數名詞複數要加 s（coffee→coffees）。（示範模式）'};}
+    return{corrected:s,isCorrect:s===b.text,zh:b.zh?'我想要一個漢堡和兩杯咖啡。（示範）':undefined,explanation:s===b.text?'這句沒有問題！':'主詞 I 的動詞不加 s（wants→want）；可數名詞複數要加 s（coffee→coffees）。（示範模式）'};}
   if(path==='/api/explain')return{word:b.word,ipa:'',pos:'',definition:'(demo definition)',zh:'（示範模式解釋）',example:`This is an example with "${b.word}".`};
+  if(path==='/api/zh')return{zh:'（示範翻譯）'+b.text.slice(0,20)};
   if(path==='/api/vocab')return{ok:true,word:b.word};throw new Error('mock');}
 
 // ---------- Notion queue ----------
@@ -77,16 +78,19 @@ function diff(a,b){const A=a.split(/\s+/),B=b.split(/\s+/),n=A.length,m=B.length
   let i=0,j=0,o=[];while(i<n||j<m){if(i<n&&j<m&&A[i]===B[j]){o.push(esc(A[i]));i++;j++}else if(j<m&&(i>=n||L[i][j+1]>=L[i+1][j])){o.push(`<ins>${esc(B[j])}</ins>`);j++}else{o.push(`<del>${esc(A[i])}</del>`);i++}}return o.join(' ');}
 const vHist=()=>{try{const h=JSON.parse(LS.eb_vhist||'[]');return Array.isArray(h)?h.filter(m=>m&&typeof m.text==='string'):[]}catch(e){return[]}},setVH=h=>{LS.eb_vhist=JSON.stringify(h.slice(-60));renderLog()};
 function renderLog(){const L=$('#vLog'),h=vHist().slice(-4);
-  L.innerHTML=h.map(m=>`<div class="msg ${m.role==='ai'?'ai':'me'}">${clickable(m.text)}</div>`).join('')
+  L.innerHTML=h.map(m=>`<div class="msg ${m.role==='ai'?'ai':'me'}">${clickable(m.text)}${m.zh&&(m.role==='ai'?trAI():trMe())?`<div class="zh">${esc(m.zh)}</div>`:''}</div>`).join('')
    +(V.inT?`<div class="msg me live">${esc(V.inT)}</div>`:'')+(V.outT?`<div class="msg ai live">${clickable(V.outT)}</div>`:'');}
 let fixT=0;function showFix(t,r){const el=$('#fixToast');
   el.innerHTML=r.isCorrect?'✅ 文法正確':`<span class="dim small">✏️ ${diff(t,r.corrected)}</span><br><b>${esc(r.corrected)}</b><br><span class="small">${esc(r.explanation||'')}</span>`;
   el.classList.remove('hidden');$('#vLog').classList.add('dim2');clearTimeout(fixT);fixT=setTimeout(()=>{el.classList.add('hidden');$('#vLog').classList.remove('dim2')},r.isCorrect?2500:8000);}
 $('#fixToast').onclick=()=>{$('#fixToast').classList.add('hidden');$('#vLog').classList.remove('dim2')};
 $('#vLog').onclick=e=>{const w=e.target.closest('.w');if(w)wordSheet(w.dataset.w)};
+const trMe=()=>LS.eb_trMe!=='0',trAI=()=>LS.eb_trAI!=='0';
+function patchH(idx,t,f){const h2=vHist();if(h2[idx]?.text===t){f(h2[idx]);LS.eb_vhist=JSON.stringify(h2.slice(-60));renderLog();}}
 function commitUser(){const t=V.inT.trim();V.inT='';if(!t)return;const h=vHist();h.push({role:'user',text:t});setVH(h);const idx=h.length-1;
-  api('/api/correct',{text:t}).then(r=>{const h2=vHist();if(h2[idx]?.text===t){h2[idx].fix=r;LS.eb_vhist=JSON.stringify(h2.slice(-60))}showFix(t,r)}).catch(e=>console.log('[eb] correct failed',e.message));}
-function commitAI(){const t=V.outT.trim();V.outT='';if(!t)return;const h=vHist();h.push({role:'ai',text:t});setVH(h);}
+  api('/api/correct',{text:t,zh:trMe()}).then(r=>{patchH(idx,t,m=>{m.fix=r;if(r&&typeof r.zh==='string')m.zh=r.zh.slice(0,300)});showFix(t,r)}).catch(e=>console.log('[eb] correct failed',e.message));}
+function commitAI(){const t=V.outT.trim();V.outT='';if(!t)return;const h=vHist();h.push({role:'ai',text:t});setVH(h);const idx=h.length-1;
+  if(trAI())api('/api/zh',{text:t}).then(r=>{if(r&&typeof r.zh==='string')patchH(idx,t,m=>m.zh=r.zh.slice(0,300))}).catch(()=>{});}
 const capOn=()=>LS.eb_cap!=='0';function renderCap(){$('#vLog').classList.toggle('hide',!capOn());$('#vCap').classList.toggle('on',capOn())}
 $('#vCap').onclick=()=>{LS.eb_cap=capOn()?'0':'1';renderCap()};
 
@@ -210,5 +214,6 @@ $('#sTest').onclick=async()=>{$('#sSave').click();const c=cfg();if(c.mock)return
 
 const go=t=>{document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('on',x.id===t));$('#scenBtn').classList.toggle('hidden',t!=='voice')};
 $('#vSet').onclick=()=>go('settings');$('#sBack').onclick=()=>go('voice');
+$('#sTrMe').checked=trMe();$('#sTrAI').checked=trAI();$('#sTrMe').onchange=e=>{LS.eb_trMe=e.target.checked?'1':'0';renderLog()};$('#sTrAI').onchange=e=>{LS.eb_trAI=e.target.checked?'1':'0';renderLog()};
 syncPrefs();renderCap();orbLoop();renderLog();vSet('off');renderStatus();warm();flushQueue();
 if('serviceWorker'in navigator)navigator.serviceWorker.register('sw.js');

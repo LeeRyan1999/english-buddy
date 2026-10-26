@@ -74,7 +74,9 @@ const wrap = fn => async (req, res) => { try { res.json(await fn(req)); } catch 
 app.post('/api/translate', wrap(req => askJSON(
   `Translate this Traditional Chinese (Taiwan) text into natural English. Return JSON {"english": string, "alt": string (a more casual alternative), "note": string (short zh-TW note on usage, optional)}.\nText: ${txt(req.body.text)}`)));
 app.post('/api/correct', wrap(req => askJSON(
-  `You are an English teacher for a Taiwanese learner. Correct the grammar of the sentence (keep meaning; if already correct, return it unchanged). Return JSON {"corrected": string, "isCorrect": boolean, "explanation": string (short Traditional Chinese explanation of each fix, 1-3 sentences)}.\nSentence: ${txt(req.body.text)}`)));
+  `You are an English teacher for a Taiwanese learner. Correct the grammar of the sentence (keep meaning; if already correct, return it unchanged). Return JSON {"corrected": string, "isCorrect": boolean, "explanation": string (short Traditional Chinese explanation of each fix, 1-3 sentences)${req.body.zh ? ', "zh": string (natural Traditional Chinese (Taiwan) translation of the corrected sentence)' : ''}}.\nSentence: ${txt(req.body.text)}`)));
+app.post('/api/zh', wrap(req => askJSON(
+  `Translate this English into natural, concise Traditional Chinese (Taiwan). Return JSON {"zh": string}.\nText: ${txt(req.body.text)}`)));
 app.post('/api/explain', wrap(req => askJSON(
   `Explain the English word or phrase for a Taiwanese learner. Return JSON {"word": string, "ipa": string, "pos": string, "definition": string (simple English), "zh": string (Traditional Chinese meaning), "example": string, "exampleZh": string}.\nWord: ${txt(req.body.word).slice(0, 80)}`)));
 app.post('/api/quizcheck', wrap(req => askJSON(
