@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="zh-Hant-TW"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0f1115"><meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"><meta name="apple-mobile-web-app-title" content="英語夥伴">
+<title>英語夥伴 English Buddy</title>
+<link rel="manifest" href="manifest.json"><link rel="apple-touch-icon" href="icon-192.png"><link rel="icon" href="icon-192.png">
+<link rel="stylesheet" href="style.css">
+</head><body>
+<header><h1>英語夥伴</h1><div id="status" class="pill"></div></header>
+<nav id="tabs">
+  <button data-tab="translate" class="on">中翻英</button><button data-tab="correct">文法</button>
+  <button data-tab="dict">單字</button><button data-tab="quiz">抽考</button><button data-tab="settings">設定</button>
+</nav>
+<main>
+<section id="translate" class="tab on">
+  <p class="hint">說中文或打字，翻成英文並朗讀。<span class="net">需連網</span></p>
+  <textarea id="tIn" placeholder="例如：我明天想去看電影"></textarea>
+  <div class="row"><button class="mic" data-target="tIn" data-lang="zh-TW">🎤 說中文</button><button class="pri" id="tGo">翻譯</button></div>
+  <div id="tOut" class="card hidden"></div>
+  <p class="hint small">小技巧：說「加入到Notion英文單字頁面 apple」可直接加單字。</p>
+</section>
+<section id="correct" class="tab">
+  <p class="hint">說或打一句英文，幫你修正文法。<span class="net">需連網</span></p>
+  <textarea id="cIn" placeholder="e.g. Yesterday I go to school and eat apple."></textarea>
+  <div class="row"><button class="mic" data-target="cIn" data-lang="en-US">🎤 說英文</button><button class="pri" id="cGo">修正</button></div>
+  <div id="cOut" class="card hidden"></div>
+</section>
+<section id="dict" class="tab">
+  <p class="hint">查單字：離線用內建字典（5000 常用字），連網時給更完整的解釋。</p>
+  <div class="row"><input id="dIn" placeholder="輸入英文單字" autocapitalize="off"><button class="pri" id="dGo">查詢</button></div>
+  <div id="dOut" class="card hidden"></div>
+</section>
+<section id="quiz" class="tab">
+  <p class="hint">從你的 Notion 單字庫隨機抽考，用中文或英文回答都可以。<span class="ok">離線可用</span></p>
+  <div class="row"><button id="qSync">↻ 同步單字</button><span id="qCount" class="small"></span></div>
+  <div class="row"><input id="addIn" placeholder="新增單字到 Notion" autocapitalize="off"><button class="pri" id="addGo">＋加入</button></div>
+  <div id="queueInfo" class="small"></div>
+  <div class="card" id="qCard"><div id="qWord" class="big">按「出題」開始</div>
+    <div class="row"><input id="qAns" placeholder="這個字是什麼意思？"><button class="mic" data-target="qAns" data-lang="zh-TW">🎤</button></div>
+    <div class="row"><button class="pri" id="qCheck">作答</button><button id="qNext">出題</button><button id="qSay">🔊</button></div>
+    <div id="qFb"></div></div>
+</section>
+<section id="settings" class="tab">
+  <label>後台網址<input id="sUrl" placeholder="https://english-buddy-api.onrender.com" autocapitalize="off"></label>
+  <label>存取碼<input id="sCode" type="password" autocomplete="off"></label>
+  <label class="chk"><input type="checkbox" id="sMock"> 示範模式（不連後台，用假資料測試介面）</label>
+  <div class="row"><button class="pri" id="sSave">儲存</button><button id="sTest">測試連線</button></div>
+  <div id="sOut" class="small"></div>
+  <p class="hint small">網址和存取碼只存在這台裝置。離線功能：抽考已同步的單字、內建字典、打字輸入。需要連網：翻譯、文法修正、詳細解釋、同步 Notion（離線新增的單字會排隊，連網後自動上傳）。<br>字典資料來自 ECDICT（MIT 授權）。</p>
+</section>
+</main>
+<script src="app.js"></script>
+</body></html>

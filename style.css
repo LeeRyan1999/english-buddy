@@ -1,0 +1,15 @@
+*{box-sizing:border-box}body{margin:0;background:#0f1115;color:#e7e9ee;font:16px/1.5 -apple-system,"PingFang TC","Noto Sans TC",sans-serif;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+header{display:flex;justify-content:space-between;align-items:center;padding:14px 16px 6px;max-width:760px;margin:auto}h1{font-size:20px;margin:0}
+.pill{font-size:13px;padding:3px 10px;border-radius:99px;background:#1f2a1f;color:#7ee08a}.pill.off{background:#2e1d1d;color:#ff8f8f}.pill.mock{background:#2b2615;color:#f3c969}
+nav{display:flex;gap:6px;padding:6px 12px;max-width:760px;margin:auto;overflow-x:auto}nav button{flex:1;white-space:nowrap}nav button.on{background:#3b82f6;border-color:#3b82f6;color:#fff}
+main{max-width:760px;margin:auto;padding:8px 16px 40px}.tab{display:none}.tab.on{display:block}
+button,input,textarea{font:inherit;color:inherit;background:#1a1d24;border:1px solid #2c313c;border-radius:12px;padding:10px 14px}button{cursor:pointer;min-height:44px}button:active{transform:scale(.97)}
+button.pri{background:#3b82f6;border-color:#3b82f6;color:#fff;font-weight:600}button:disabled{opacity:.45}
+textarea{width:100%;min-height:96px;resize:vertical}input{flex:1;min-width:0;min-height:44px}label{display:flex;flex-direction:column;gap:6px;margin:12px 0}label.chk{flex-direction:row;align-items:center}label.chk input{flex:0;min-height:auto}
+.row{display:flex;gap:8px;margin:10px 0;align-items:center;flex-wrap:wrap}.row .pri{flex:1}
+.card{background:#161920;border:1px solid #262b35;border-radius:16px;padding:14px;margin-top:12px}.hidden{display:none}
+.hint{color:#9aa3b2;font-size:14px}.small{font-size:13px;color:#9aa3b2}.big{font-size:28px;font-weight:700;margin:4px 0 8px}
+.net{margin-left:6px;font-size:12px;color:#f3c969;border:1px solid #6b5a2a;border-radius:6px;padding:0 6px}.ok{margin-left:6px;font-size:12px;color:#7ee08a;border:1px solid #2f5a35;border-radius:6px;padding:0 6px}
+.en{font-size:20px;font-weight:600}ins{background:#1d3b25;color:#8ff0a0;text-decoration:none;border-radius:4px;padding:0 2px}del{background:#3b1d1d;color:#ff9a9a;border-radius:4px;padding:0 2px}
+.w{cursor:pointer;border-bottom:1px dashed #556}.good{color:#7ee08a}.bad{color:#ff8f8f}.err{color:#ff8f8f}
+.mic.rec{background:#b91c1c;border-color:#b91c1c;color:#fff}

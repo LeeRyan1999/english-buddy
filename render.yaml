@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: english-buddy-api
+    runtime: node
+    plan: free
+    rootDir: server
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      - key: ALLOWED_ORIGINS
+        value: https://leeryan1999.github.io
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: APP_ACCESS_CODE
+        generateValue: true
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: NOTION_TOKEN
+        sync: false
+      - key: NOTION_DATABASE_ID
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
